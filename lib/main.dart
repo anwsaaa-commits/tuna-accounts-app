@@ -3,55 +3,165 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
+import 'package:path/path.dart' as path;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
-const gold=Color(0xFFD7AF59), black=Color(0xFF101114), card=Color(0xFF202024);
-Future<void> main() async { WidgetsFlutterBinding.ensureInitialized(); await initializeDateFormatting('ar'); await DB.i.db; runApp(const TunaApp()); }
-String money(num n)=>NumberFormat('#,##0','en').format(n)+' ر.ي';
-String date(String s)=>DateFormat('yyyy/MM/dd HH:mm','ar').format(DateTime.parse(s));
+const gold = Color(0xFFD7AF59);
+const bg = Color(0xFF101114);
+const panel = Color(0xFF202024);
 
-class TunaApp extends StatelessWidget { const TunaApp({super.key}); @override Widget build(BuildContext c)=>MaterialApp(title:'متجر تونة بلس',debugShowCheckedModeBanner:false,locale:const Locale('ar'),supportedLocales:const[Locale('ar'),Locale('en')],localizationsDelegates:const[GlobalMaterialLocalizations.delegate,GlobalWidgetsLocalizations.delegate,GlobalCupertinoLocalizations.delegate],theme:ThemeData(useMaterial3:true,brightness:Brightness.dark,scaffoldBackgroundColor:black,colorScheme:ColorScheme.fromSeed(seedColor:gold,brightness:Brightness.dark),appBarTheme:const AppBarTheme(backgroundColor:black,foregroundColor:gold,centerTitle:true),cardTheme:CardThemeData(color:card,shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(16)))),home:const Directionality(textDirection:TextDirection.rtl,child:Shell())); }
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting('ar');
+  await DB.instance.database;
+  runApp(const TunaApp());
+}
+String money(num n) => '${NumberFormat('#,##0','en').format(n)} ر.ي';
+String fmtDate(String s) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime.parse(s));
+
+class TunaApp extends StatelessWidget {
+  const TunaApp({super.key});
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'تونة بلس', debugShowCheckedModeBanner: false,
+    locale: const Locale('ar'),
+    supportedLocales: const [Locale('ar'), Locale('en')],
+    localizationsDelegates: const [
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
+    theme: ThemeData(
+      useMaterial3: true, brightness: Brightness.dark,
+      scaffoldBackgroundColor: bg,
+      colorScheme: ColorScheme.fromSeed(seedColor: gold, brightness: Brightness.dark),
+      appBarTheme: const AppBarTheme(backgroundColor: bg, foregroundColor: gold, centerTitle: true),
+      cardTheme: CardThemeData(color: panel),
+    ),
+    home: const Directionality(textDirection: TextDirection.rtl, child: AppShell()),
+  );
+}
 
 class DB {
- DB._(); static final i=DB._(); Database? _db;
- Future<Database> get db async { if(_db!=null)return _db!; _db=await openDatabase(join(await getDatabasesPath(),'tuna_plus.db'),version:1,onCreate:(d,v)async{
- await d.execute('CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,phone TEXT,note TEXT)');
- await d.execute('CREATE TABLE sales(id INTEGER PRIMARY KEY AUTOINCREMENT,invoice TEXT UNIQUE,customer_id INTEGER,kg REAL,price INTEGER,total INTEGER,paid INTEGER,kind TEXT,note TEXT,created TEXT)');
- await d.execute('CREATE TABLE collections(id INTEGER PRIMARY KEY AUTOINCREMENT,customer_id INTEGER,amount INTEGER,note TEXT,created TEXT)');
- await d.execute('CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT)');
- await d.insert('settings',{'key':'shop','value':'متجر تونة بلس'}); await d.insert('settings',{'key':'price','value':'6500'});
- }); return _db!; }
- Future<List<Map<String,Object?>>> customers()async=>(await db).query('customers',orderBy:'name');
- Future<List<Map<String,Object?>>> sales()async=>(await db).query('sales',orderBy:'created DESC');
- Future<int> customer(String name,String phone,String note)async {if(name.trim().isEmpty)throw Exception('اسم العميل مطلوب');return (await db).insert('customers',{'name':name.trim(),'phone':phone,'note':note});}
- Future<int> sale(int? cid,double kg,int p,int paid,String kind,String note)async{if(kg<=0||p<=0||paid<0)throw Exception('تحقق من الوزن والسعر والمدفوع');final total=(kg*p).round();if(paid>total)throw Exception('المدفوع لا يتجاوز الإجمالي');if(kind=='نقدي'&&paid!=total)throw Exception('البيع النقدي مدفوع بالكامل');return (await db).insert('sales',{'invoice':'TP-${DateTime.now().millisecondsSinceEpoch}','customer_id':cid,'kg':kg,'price':p,'total':total,'paid':paid,'kind':kind,'note':note,'created':DateTime.now().toIso8601String()});}
- Future<int> collection(int cid,int amount,String note)async{if(amount<=0)throw Exception('أدخل مبلغاً صحيحاً');final d=await db;final sold=(await d.rawQuery('SELECT COALESCE(SUM(total),0) v FROM sales WHERE customer_id=?',[cid])).first['v'] as num;final paid=(await d.rawQuery('SELECT COALESCE(SUM(paid),0) v FROM sales WHERE customer_id=?',[cid])).first['v'] as num;final collected=(await d.rawQuery('SELECT COALESCE(SUM(amount),0) v FROM collections WHERE customer_id=?',[cid])).first['v'] as num;if(amount>sold.toInt()-paid.toInt()-collected.toInt())throw Exception('مبلغ التحصيل أكبر من الرصيد المستحق');return d.insert('collections',{'customer_id':cid,'amount':amount,'note':note,'created':DateTime.now().toIso8601String()});}
- Future<void> deleteSale(int id)async{await(await db).delete('sales',where:'id=?',whereArgs:[id]);}
- Future<List<Map<String,Object?>>> csales(int cid)async=>(await db).query('sales',where:'customer_id=?',whereArgs:[cid],orderBy:'created ASC');
- Future<List<Map<String,Object?>>> ccollect(int cid)async=>(await db).query('collections',where:'customer_id=?',whereArgs:[cid],orderBy:'created ASC');
- Future<String> setting(String k,String fallback)async{final r=await(await db).query('settings',where:'key=?',whereArgs:[k]);return r.isEmpty?fallback:r.first['value'] as String;}
- Future<void> set(String k,String v)async{await(await db).insert('settings',{'key':k,'value':v},conflictAlgorithm:ConflictAlgorithm.replace);}
- Future<Map<String,num>> sums()async{final d=await db;final r=(await d.rawQuery('SELECT COALESCE(SUM(total),0) t,COALESCE(SUM(paid),0) p,COALESCE(SUM(kg),0) g FROM sales')).first;final rawDue=(await d.rawQuery('SELECT COALESCE(SUM(total-paid),0) v FROM sales')).first['v'] as num;final col=(await d.rawQuery('SELECT COALESCE(SUM(amount),0) v FROM collections')).first['v'] as num;return{'sales':(r['t'] as num).toInt(),'paid':(r['p'] as num).toInt(),'kg':(r['g'] as num).toDouble(),'due':(rawDue.toInt()-col.toInt()).clamp(0,1<<31),'collections':col.toInt()};}
+  DB._();
+  static final DB instance = DB._();
+  Database? _db;
+  Future<Database> get database async {
+    if (_db != null) return _db!;
+    _db = await openDatabase(path.join(await getDatabasesPath(), 'tuna_plus.db'),
+      version: 1, onCreate: (db, version) async {
+        await db.execute('CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,phone TEXT,note TEXT)');
+        await db.execute('CREATE TABLE sales(id INTEGER PRIMARY KEY AUTOINCREMENT,invoice TEXT UNIQUE,customer_id INTEGER,kg REAL,price INTEGER,total INTEGER,paid INTEGER,kind TEXT,note TEXT,created TEXT)');
+        await db.execute('CREATE TABLE collections(id INTEGER PRIMARY KEY AUTOINCREMENT,customer_id INTEGER,amount INTEGER,note TEXT,created TEXT)');
+        await db.execute('CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT)');
+        await db.insert('settings', {'key':'shop','value':'تونة بلس'});
+        await db.insert('settings', {'key':'price','value':'6500'});
+      });
+    return _db!;
+  }
+  Future<List<Map<String,Object?>>> customers() async => (await database).query('customers',orderBy:'name');
+  Future<List<Map<String,Object?>>> sales() async => (await database).query('sales',orderBy:'created DESC');
+  Future<int> addCustomer(String name,String phone,String note) async {
+    if(name.trim().isEmpty) throw Exception('اسم العميل مطلوب');
+    return (await database).insert('customers',{'name':name.trim(),'phone':phone,'note':note});
+  }
+  Future<int> addSale(int? cid,double kg,int price,int paid,String kind,String note) async {
+    if(kg<=0||price<=0||paid<0) throw Exception('تحقق من الوزن والسعر والمدفوع');
+    final total=(kg*price).round();
+    if(paid>total) throw Exception('المدفوع لا يتجاوز الإجمالي');
+    if(kind=='نقدي'&&paid!=total) throw Exception('البيع النقدي يجب أن يكون مدفوعاً بالكامل');
+    return (await database).insert('sales',{'invoice':'TP-${DateTime.now().microsecondsSinceEpoch}','customer_id':cid,'kg':kg,'price':price,'total':total,'paid':paid,'kind':kind,'note':note,'created':DateTime.now().toIso8601String()});
+  }
+  Future<int> collect(int cid,int amount,String note) async {
+    if(amount<=0) throw Exception('أدخل مبلغ تحصيل صحيح');
+    final db=await database;
+    final s=(await db.rawQuery('SELECT COALESCE(SUM(total-paid),0) v FROM sales WHERE customer_id=?',[cid])).first['v'] as num;
+    final c=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) v FROM collections WHERE customer_id=?',[cid])).first['v'] as num;
+    if(amount>s.toInt()-c.toInt()) throw Exception('المبلغ أكبر من الرصيد المستحق');
+    return db.insert('collections',{'customer_id':cid,'amount':amount,'note':note,'created':DateTime.now().toIso8601String()});
+  }
+  Future<Map<String,num>> totals() async {
+    final db=await database;
+    final s=(await db.rawQuery('SELECT COALESCE(SUM(total),0) total,COALESCE(SUM(paid),0) paid,COALESCE(SUM(kg),0) weight FROM sales')).first;
+    final collected=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) total FROM collections')).first['total'] as num;
+    final debt=(await db.rawQuery('SELECT COALESCE(SUM(total-paid),0) total FROM sales')).first['total'] as num;
+    return {'sales':(s['total'] as num),'paid':(s['paid'] as num),'weight':(s['weight'] as num),'collections':collected,'debt':debt-collected};
+  }
+  Future<Map<String,num>> customerTotals(int id) async {
+    final db=await database;
+    final s=(await db.rawQuery('SELECT COALESCE(SUM(total),0) total,COALESCE(SUM(paid),0) paid FROM sales WHERE customer_id=?',[id])).first;
+    final c=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) total FROM collections WHERE customer_id=?',[id])).first['total'] as num;
+    return {'sales':s['total'] as num,'paid':(s['paid'] as num)+c,'debt':(s['total'] as num)-(s['paid'] as num)-c};
+  }
+  Future<List<Map<String,Object?>>> customerSales(int id) async => (await database).query('sales',where:'customer_id=?',whereArgs:[id],orderBy:'created DESC');
+  Future<List<Map<String,Object?>>> customerCollections(int id) async => (await database).query('collections',where:'customer_id=?',whereArgs:[id],orderBy:'created DESC');
+  Future<String> setting(String key,String fallback) async {
+    final rows=await (await database).query('settings',where:'key=?',whereArgs:[key]);
+    return rows.isEmpty?fallback:rows.first['value'] as String;
+  }
+  Future<void> setSetting(String key,String value) async => (await database).insert('settings',{'key':key,'value':value},conflictAlgorithm:ConflictAlgorithm.replace);
+  Future<void> deleteSale(int id) async {
+    final db=await database;
+    final sale=(await db.query('sales',where:'id=?',whereArgs:[id])).first;
+    final cid=sale['customer_id'];
+    if(cid!=null){
+      final outstanding=(await db.rawQuery('SELECT COALESCE(SUM(total-paid),0) v FROM sales WHERE customer_id=?',[cid])).first['v'] as num;
+      final collected=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) v FROM collections WHERE customer_id=?',[cid])).first['v'] as num;
+      if(collected>outstanding-(sale['total'] as num)+(sale['paid'] as num)) throw Exception('لا يمكن حذف فاتورة لأن هناك تحصيلات مرتبطة. راجع كشف الحساب أولاً.');
+    }
+    await db.delete('sales',where:'id=?',whereArgs:[id]);
+  }
 }
-void msg(BuildContext c,String s)=>ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text(s)));
 
-class Shell extends StatefulWidget{const Shell({super.key});@override State<Shell> createState()=>_ShellState();}
-class _ShellState extends State<Shell>{int index=0;int refresh=0;void reload()=>setState(()=>refresh++);@override Widget build(BuildContext c){final pages=[Home(key:ValueKey(refresh),go:(i)=>setState(()=>index=i)),Invoices(key:ValueKey('i$refresh')),Clients(key:ValueKey('c$refresh')),Report(key:ValueKey('r$refresh'))];return Scaffold(appBar:AppBar(title:Text(['متجر تونة بلس','الفواتير','العملاء','التقارير'][index]),actions:[IconButton(icon:const Icon(Icons.settings),onPressed:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const Settings())).then((_)=>reload()))]),body:pages[index],bottomNavigationBar:NavigationBar(backgroundColor:card,indicatorColor:gold.withValues(alpha:.25),selectedIndex:index,onDestinationSelected:(v)=>setState(()=>index=v),destinations:const[NavigationDestination(icon:Icon(Icons.home),label:'الرئيسية'),NavigationDestination(icon:Icon(Icons.receipt_long),label:'فواتير'),NavigationDestination(icon:Icon(Icons.people),label:'عملاء'),NavigationDestination(icon:Icon(Icons.bar_chart),label:'تقارير')]);}}
+void toast(BuildContext context,String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(text)));
 
-class Home extends StatefulWidget{const Home({super.key,required this.go});final ValueChanged<int> go;@override State<Home> createState()=>_HomeState();}
-class _HomeState extends State<Home>{late Future<Map<String,num>> f;void load()=>f=DB.i.sums();@override void initState(){super.initState();load();}Widget metric(String label,String value,IconData icon)=>Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(mainAxisAlignment:MainAxisAlignment.center,children:[Icon(icon,color:gold),Text(label,style:const TextStyle(fontSize:12)),Text(value,style:const TextStyle(color:gold,fontWeight:FontWeight.bold),textAlign:TextAlign.center)])));@override Widget build(BuildContext c)=>FutureBuilder(future:f,builder:(c,s){final d=s.data??{};return RefreshIndicator(onRefresh:()async{setState(load);},child:ListView(padding:const EdgeInsets.all(16),children:[const Icon(Icons.set_meal,color:gold,size:64),const Text('متجر تونة بلس',textAlign:TextAlign.center,style:TextStyle(color:gold,fontSize:26,fontWeight:FontWeight.bold)),const Text('إدارة بيع التونة والحسابات',textAlign:TextAlign.center),const SizedBox(height:20),GridView.count(shrinkWrap:true,physics:const NeverScrollableScrollPhysics(),crossAxisCount:2,childAspectRatio:1.5,children:[metric('إجمالي المبيعات',money(d['sales']??0),Icons.point_of_sale),metric('المبالغ المدفوعة',money(d['paid']??0),Icons.payments),metric('الديون القائمة',money(d['due']??0),Icons.account_balance),metric('الوزن المباع','${(d['kg']??0).toStringAsFixed(3)} كجم',Icons.scale)]),const SizedBox(height:16),FilledButton.icon(style:FilledButton.styleFrom(backgroundColor:gold,foregroundColor:black,padding:const EdgeInsets.all(14)),onPressed:()=>newSale(c).then((_)=>setState(load)),icon:const Icon(Icons.add),label:const Text('بيع جديد')),OutlinedButton.icon(onPressed:()=>newClient(c).then((_)=>setState(load)),icon:const Icon(Icons.person_add),label:const Text('إضافة عميل')),Card(child:ListTile(title:const Text('الفواتير'),leading:const Icon(Icons.receipt,color:gold),trailing:const Icon(Icons.chevron_left),onTap:()=>widget.go(1))),Card(child:ListTile(title:const Text('العملاء وكشف الحساب'),leading:const Icon(Icons.people,color:gold),trailing:const Icon(Icons.chevron_left),onTap:()=>widget.go(2))),Card(child:ListTile(title:const Text('التقارير'),leading:const Icon(Icons.summarize,color:gold),trailing:const Icon(Icons.chevron_left),onTap:()=>widget.go(3)))]));});}}
-
-Future<void> newClient(BuildContext c)async{final n=TextEditingController(),ph=TextEditingController(),note=TextEditingController();await showDialog(context:c,builder:(x)=>AlertDialog(title:const Text('إضافة عميل'),content:Column(mainAxisSize:MainAxisSize.min,children:[TextField(controller:n,decoration:const InputDecoration(labelText:'اسم العميل *')),TextField(controller:ph,decoration:const InputDecoration(labelText:'الهاتف')),TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظات'))]),actions:[TextButton(onPressed:()=>Navigator.pop(x),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.i.customer(n.text,ph.text,note.text);if(x.mounted)Navigator.pop(x);}catch(e){msg(x,e.toString());}},child:const Text('حفظ'))]));}
-Future<void> newSale(BuildContext c)async{final cl=await DB.i.customers();if(!c.mounted)return;int? cid=cl.isEmpty?null:cl.first['id'] as int;final kg=TextEditingController(),p=TextEditingController(text:await DB.i.setting('price','6500')),paid=TextEditingController(),note=TextEditingController();String kind='نقدي';await showDialog(context:c,builder:(x)=>StatefulBuilder(builder:(x,set)=>AlertDialog(title:const Text('بيع تونة'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[DropdownButtonFormField<int?>(value:cid,decoration:const InputDecoration(labelText:'العميل'),items:[const DropdownMenuItem<int?>(value:null,child:Text('بيع بدون عميل')),...cl.map((v)=>DropdownMenuItem<int?>(value:v['id'] as int,child:Text(v['name'] as String)))],onChanged:(v)=>set(()=>cid=v)),TextField(controller:kg,onChanged:(_)=>set(()=>{}),keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'الوزن بالكيلو (مثال 2.5)')),TextField(controller:p,onChanged:(_)=>set(()=>{}),keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو')),TextField(controller:paid,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'المبلغ المدفوع الآن')),DropdownButtonFormField<String>(value:kind,decoration:const InputDecoration(labelText:'طريقة البيع'),items:['نقدي','آجل'].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),onChanged:(v)=>set(()=>kind=v??'نقدي')),TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظات')),Text('الإجمالي: ${money(((double.tryParse(kg.text)??0)*(int.tryParse(p.text)??0)).round())}',style:const TextStyle(color:gold,fontWeight:FontWeight.bold))])),actions:[TextButton(onPressed:()=>Navigator.pop(x),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{final weight=double.parse(kg.text),price=int.parse(p.text),total=(weight*price).round();final cash=paid.text.isEmpty?(kind=='نقدي'?total:0):int.parse(paid.text);await DB.i.sale(cid,weight,price,cash,kind,note.text);await DB.i.set('price',price.toString());if(x.mounted)Navigator.pop(x);msg(c,'تم تسجيل البيع والفاتورة');}catch(e){msg(x,e.toString().replaceAll('Exception: ',''));}},child:const Text('حفظ البيع'))])));}
-class Invoices extends StatefulWidget{const Invoices({super.key});@override State<Invoices> createState()=>_InvoicesState();}
-class _InvoicesState extends State<Invoices>{late Future<List<Map<String,Object?>>> f;void load()=>f=DB.i.sales();@override void initState(){super.initState();load();}@override Widget build(BuildContext c)=>FutureBuilder(future:f,builder:(c,s)=>RefreshIndicator(onRefresh:()async{setState(load);},child:ListView(padding:const EdgeInsets.all(12),children:[FilledButton.icon(onPressed:()=>newSale(c).then((_)=>setState(load)),icon:const Icon(Icons.add),label:const Text('بيع جديد')),if(s.data==null)const Center(child:CircularProgressIndicator())else if(s.data!.isEmpty)const Padding(padding:EdgeInsets.all(24),child:Text('لا توجد فواتير'))else ...s.data!.map((v)=>Card(child:ListTile(title:Text('${v['invoice']} • ${money(v['total'] as int)}'),subtitle:Text('${(v['kg'] as num).toStringAsFixed(3)} كجم • ${v['kind']} • ${date(v['created'] as String)}\nمدفوع ${money(v['paid'] as int)} — متبقي ${money((v['total'] as int)-(v['paid'] as int))}'),isThreeLine:true,leading:const Icon(Icons.receipt,color:gold),trailing:IconButton(icon:const Icon(Icons.delete,color:Colors.red),onPressed:()async{final ok=await showDialog<bool>(context:c,builder:(x)=>AlertDialog(title:const Text('حذف الفاتورة؟'),actions:[TextButton(onPressed:()=>Navigator.pop(x,false),child:const Text('رجوع')),FilledButton(onPressed:()=>Navigator.pop(x,true),child:const Text('حذف'))]));if(ok==true){await DB.i.deleteSale(v['id'] as int);setState(load);}}))))])));}}
-class Clients extends StatefulWidget{const Clients({super.key});@override State<Clients> createState()=>_ClientsState();}
-class _ClientsState extends State<Clients>{late Future<List<Map<String,Object?>>> f;void load()=>f=DB.i.customers();@override void initState(){super.initState();load();}@override Widget build(BuildContext c)=>FutureBuilder(future:f,builder:(c,s)=>Column(children:[Padding(padding:const EdgeInsets.all(12),child:FilledButton.icon(onPressed:()=>newClient(c).then((_)=>setState(load)),icon:const Icon(Icons.person_add),label:const Text('عميل جديد'))),Expanded(child:ListView(children:[if(s.data==null)const Center(child:CircularProgressIndicator())else if(s.data!.isEmpty)const Padding(padding:EdgeInsets.all(24),child:Text('لا يوجد عملاء مسجلون'))else ...s.data!.map((v)=>Card(child:ListTile(leading:const CircleAvatar(backgroundColor:gold,child:Icon(Icons.person,color:black)),title:Text(v['name'] as String),subtitle:Text(v['phone'] as String? ?? ''),trailing:const Icon(Icons.chevron_left),onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ClientLedger(client:v))))))])));}
+class AppShell extends StatefulWidget {
+  const AppShell({super.key});
+  @override State<AppShell> createState()=>_AppShellState();
 }
-class ClientLedger extends StatefulWidget{const ClientLedger({super.key,required this.client});final Map<String,Object?> client;@override State<ClientLedger> createState()=>_ClientLedgerState();}
-class _ClientLedgerState extends State<ClientLedger>{late Future<List<List<Map<String,Object?>>>> f;int get id=>widget.client['id'] as int;void load()=>f=Future.wait([DB.i.csales(id),DB.i.ccollect(id)]);@override void initState(){super.initState();load();}Future<void> collect()async{final a=TextEditingController(),n=TextEditingController();await showDialog(context:context,builder:(x)=>AlertDialog(title:const Text('تسجيل تحصيل'),content:Column(mainAxisSize:MainAxisSize.min,children:[TextField(controller:a,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'المبلغ')),TextField(controller:n,decoration:const InputDecoration(labelText:'ملاحظات'))]),actions:[TextButton(onPressed:()=>Navigator.pop(x),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.i.collection(id,int.parse(a.text),n.text);if(x.mounted)Navigator.pop(x);setState(load);}catch(e){msg(x,e.toString());}},child:const Text('حفظ'))]));}@override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:Text(widget.client['name'] as String)),floatingActionButton:FloatingActionButton.extended(backgroundColor:gold,foregroundColor:black,onPressed:collect,icon:const Icon(Icons.payments),label:const Text('تحصيل')),body:FutureBuilder(future:f,builder:(c,s){if(!s.hasData)return const Center(child:CircularProgressIndicator());final sales=s.data![0],cols=s.data![1];final sold=sales.fold<int>(0,(sum,v)=>sum+(v['total'] as int));final received=sales.fold<int>(0,(sum,v)=>sum+(v['paid'] as int))+cols.fold<int>(0,(sum,v)=>sum+(v['amount'] as int));return ListView(padding:const EdgeInsets.all(12),children:[Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(children:[Text('إجمالي المبيعات: ${money(sold)}'),Text('إجمالي المدفوع: ${money(received)}'),Text('المتبقي: ${money(sold-received)}',style:const TextStyle(color:gold,fontSize:20,fontWeight:FontWeight.bold))]))),if((widget.client['note'] as String? ?? '').isNotEmpty)Text('ملاحظات: ${widget.client['note']}'),const Text('المبيعات',style:TextStyle(color:gold,fontSize:18)),...sales.map((v)=>ListTile(title:Text('${v['invoice']} - ${money(v['total'] as int)}'),subtitle:Text('${date(v['created'] as String)} • ${v['kind']}'))),const Text('التحصيلات',style:TextStyle(color:gold,fontSize:18)),...cols.map((v)=>ListTile(title:Text(money(v['amount'] as int)),subtitle:Text(date(v['created'] as String)+' • ${v['note']??''}')))]);})));}}
-class Report extends StatelessWidget{const Report({super.key});Future<void> pdf()async{final d=await DB.i.sums(),s=await DB.i.sales();final doc=pw.Document();doc.addPage(pw.Page(build:(c)=>pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.start,children:[pw.Text('TUNA PLUS - Sales Ledger',style:pw.TextStyle(fontSize:20,fontWeight:pw.FontWeight.bold)),pw.SizedBox(height:12),pw.Text('Sales total: ${money(d['sales']!)}'),pw.Text('Paid: ${money(d['paid']!)}'),pw.Text('Debt: ${money(d['due']!)}'),pw.Text('Weight: ${(d['kg']!).toStringAsFixed(3)} kg'),pw.SizedBox(height:16),pw.Table.fromTextArray(data:[['Invoice','Date','kg','Total','Paid','Due'],...s.map((v)=>[v['invoice'],(v['created'] as String).substring(0,10),v['kg'],v['total'],v['paid'],(v['total'] as int)-(v['paid'] as int)])])])));await Printing.layoutPdf(onLayout:(format)=>doc.save());} @override Widget build(BuildContext c)=>FutureBuilder(future:DB.i.sums(),builder:(c,s){final d=s.data??{};return ListView(padding:const EdgeInsets.all(12),children:[for(final pair in [('إجمالي المبيعات',d['sales']??0),('المدفوع',d['paid']??0),('الديون القائمة',d['due']??0),('التحصيلات',d['collections']??0),('الوزن المباع',(d['kg']??0).toStringAsFixed(3)+' كجم')])Card(child:ListTile(title:Text(pair.$1),trailing:Text(pair.$2 is num?money(pair.$2 as num):pair.$2.toString(),style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))) ,FilledButton.icon(onPressed:pdf,icon:const Icon(Icons.picture_as_pdf),label:const Text('طباعة / حفظ تقرير PDF'))]);});}}
-class Settings extends StatefulWidget{const Settings({super.key});@override State<Settings> createState()=>_SettingsState();}
-class _SettingsState extends State<Settings>{final name=TextEditingController(),phone=TextEditingController(),price=TextEditingController();@override void initState(){super.initState();load();}Future<void> load()async{name.text=await DB.i.setting('shop','متجر تونة بلس');phone.text=await DB.i.setting('phone','');price.text=await DB.i.setting('price','6500');}Future<void> save()async{await DB.i.set('shop',name.text);await DB.i.set('phone',phone.text);await DB.i.set('price',price.text);if(mounted){msg(context,'تم الحفظ');Navigator.pop(context);}}@override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('إعدادات المتجر')),body:ListView(padding:const EdgeInsets.all(16),children:[TextField(controller:name,decoration:const InputDecoration(labelText:'اسم المتجر')),TextField(controller:phone,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'رقم التواصل')),TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو الافتراضي')),const SizedBox(height:20),FilledButton(onPressed:save,child:const Text('حفظ'))]));}
+class _AppShellState extends State<AppShell>{
+  int tab=0, refresh=0;
+  void reload()=>setState(()=>refresh++);
+  @override Widget build(BuildContext context){
+    final screens=[Dashboard(key:ValueKey(refresh),onRefresh:reload,onTab:(v)=>setState(()=>tab=v)),InvoicePage(key:ValueKey('invoices$refresh'),onRefresh:reload),CustomerPage(key:ValueKey('customers$refresh'),onRefresh:reload),ReportPage(key:ValueKey('report$refresh'))];
+    return Scaffold(appBar:AppBar(title:Text(['تونة بلس','الفواتير','العملاء','التقارير'][tab]),actions:[IconButton(icon:const Icon(Icons.settings),onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const SettingsPage())).then((_)=>reload()))]),body:screens[tab],bottomNavigationBar:NavigationBar(selectedIndex:tab,onDestinationSelected:(v)=>setState(()=>tab=v),backgroundColor:panel,indicatorColor:gold.withValues(alpha:.2),destinations:const[NavigationDestination(icon:Icon(Icons.home),label:'الرئيسية'),NavigationDestination(icon:Icon(Icons.receipt_long),label:'فواتير'),NavigationDestination(icon:Icon(Icons.people),label:'عملاء'),NavigationDestination(icon:Icon(Icons.bar_chart),label:'تقارير')]));
+  }
+}
+
+class Dashboard extends StatefulWidget {
+  const Dashboard({super.key,required this.onRefresh,required this.onTab});
+  final VoidCallback onRefresh; final ValueChanged<int> onTab;
+  @override State<Dashboard> createState()=>_DashboardState();
+}
+class _DashboardState extends State<Dashboard>{
+  late Future<Map<String,num>> future;
+  @override void initState(){super.initState();future=DB.instance.totals();}
+  Widget metric(String title,String value,IconData icon)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(mainAxisAlignment:MainAxisAlignment.center,children:[Icon(icon,color:gold),Text(title),Text(value,style:const TextStyle(color:gold,fontWeight:FontWeight.bold))])));
+  @override Widget build(BuildContext context)=>FutureBuilder(future:future,builder:(context,s)=>RefreshIndicator(onRefresh:()async{setState(()=>future=DB.instance.totals());},child:ListView(padding:const EdgeInsets.all(14),children:[const Icon(Icons.set_meal,color:gold,size:60),const Text('تونة بلس',textAlign:TextAlign.center,style:TextStyle(color:gold,fontSize:26,fontWeight:FontWeight.bold)),const Text('إدارة مبيعات التونة بالكيلو',textAlign:TextAlign.center),const SizedBox(height:12),GridView.count(shrinkWrap:true,physics:const NeverScrollableScrollPhysics(),crossAxisCount:2,childAspectRatio:1.45,children:[metric('المبيعات',money(s.data?['sales']??0:0),Icons.point_of_sale),metric('المدفوع من الفواتير',money(s.data?['paid']??0:0),Icons.payments),metric('الديون المتبقية',money(s.data?['debt']??0:0),Icons.account_balance),metric('الوزن', '${(s.data?['weight']??0).toStringAsFixed(3)} كجم", Icons.scale)]),const SizedBox(height:12),FilledButton.icon(onPressed:()=>createSale(context).then((_)=>setState(()=>future=DB.instance.totals())),icon:const Icon(Icons.add),label:const Text('بيع جديد')),OutlinedButton.icon(onPressed:()=>createCustomer(context).then((_)=>setState(()=>future=DB.instance.totals())),icon:const Icon(Icons.person_add),label:const Text('إضافة عميل')),ListTile(title:const Text('الفواتير'),trailing:const Icon(Icons.chevron_left),onTap:()=>widget.onTab(1)),ListTile(title:const Text('العملاء وكشف الحساب'),trailing:const Icon(Icons.chevron_left),onTap:()=>widget.onTab(2)),ListTile(title:const Text('التقارير'),trailing:const Icon(Icons.chevron_left),onTap:()=>widget.onTab(3))])));
+}
+
+Future<void> createCustomer(BuildContext context)async{
+  final name=TextEditingController(),phone=TextEditingController(),note=TextEditingController();
+  await showDialog(context:context,builder:(ctx)=>AlertDialog(title:const Text('إضافة عميل'),content:Column(mainAxisSize:MainAxisSize.min,children:[TextField(controller:name,decoration:const InputDecoration(labelText:'اسم العميل')),TextField(controller:phone,decoration:const InputDecoration(labelText:'الهاتف')),TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظات'))]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addCustomer(name.text,phone.text,note.text);if(ctx.mounted)Navigator.pop(ctx);}catch(e){toast(ctx,e.toString());}},child:const Text('حفظ'))]));
+}
+Future<void> createSale(BuildContext context)async{
+  final clients=await DB.instance.customers();if(!context.mounted)return;
+  int? selected=clients.isEmpty?null:clients.first['id'] as int;
+  final weight=TextEditingController(),price=TextEditingController(text:await DB.instance.setting('price','6500')),paid=TextEditingController(),note=TextEditingController();String kind='نقدي';
+  await showDialog(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,set)=>AlertDialog(title:const Text('بيع تونة'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[DropdownButtonFormField<int>(value:selected,decoration:const InputDecoration(labelText:'العميل (اختياري)'),items:clients.map((e)=>DropdownMenuItem<int>(value:e['id'] as int,child:Text(e['name'] as String))).toList(),onChanged:(v)=>set(()=>selected=v)),TextField(controller:weight,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن بالكيلو')),TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو')),TextField(controller:paid,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'المدفوع')),DropdownButtonFormField<String>(value:kind,decoration:const InputDecoration(labelText:'نوع البيع'),items:['نقدي','آجل'].map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(v)=>set(()=>kind=v??'نقدي')),TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظات')),Text('الإجمالي: ${money(((double.tryParse(weight.text)??0)*(int.tryParse(price.text)??0)).round())}') ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{final kg=double.parse(weight.text),p=int.parse(price.text);final total=(kg*p).round();final cash=paid.text.trim().isEmpty?(kind=='نقدي'?total:0):int.parse(paid.text);await DB.instance.addSale(selected,kg,p,cash,kind,note.text);await DB.instance.setSetting('price',p.toString());if(ctx.mounted)Navigator.pop(ctx);if(context.mounted)toast(context,'تم حفظ البيع');}catch(e){toast(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ البيع'))])));
+}
+
+class InvoicePage extends StatefulWidget{const InvoicePage({super.key,required this.onRefresh});final VoidCallback onRefresh;@override State<InvoicePage> createState()=>_InvoicePageState();}
+class _InvoicePageState extends State<InvoicePage>{late Future<List<Map<String,Object?>>> future;@override void initState(){super.initState();future=DB.instance.sales();}@override Widget build(BuildContext context)=>FutureBuilder(future:future,builder:(context,s)=>RefreshIndicator(onRefresh:()async{setState(()=>future=DB.instance.sales());},child:ListView(padding:const EdgeInsets.all(12),children:[FilledButton.icon(onPressed:()=>createSale(context).then((_)=>setState(()=>future=DB.instance.sales())),icon:const Icon(Icons.add),label:const Text('بيع جديد')),if(!s.hasData)const Center(child:CircularProgressIndicator())else if(s.data!.isEmpty)const Padding(padding:EdgeInsets.all(20),child:Text('لا توجد فواتير'))else ...s.data!.map((v)=>Card(child:ListTile(title:Text('${v['invoice']} • ${money(v['total'] as num)}'),subtitle:Text('${v['kg']} كجم | ${v['kind']} | ${fmtDate(v['created'] as String)}\nمدفوع: ${money(v['paid'] as num)}'),leading:const Icon(Icons.receipt,color:gold),trailing:IconButton(icon:const Icon(Icons.delete,color:Colors.red),onPressed:()async{try{await DB.instance.deleteSale(v['id'] as int);setState(()=>future=DB.instance.sales());}catch(e){toast(context,e.toString());}}))))])));}
+}
+
+class CustomerPage extends StatefulWidget{const CustomerPage({super.key,required this.onRefresh});final VoidCallback onRefresh;@override State<CustomerPage> createState()=>_CustomerPageState();}
+class _CustomerPageState extends State<CustomerPage>{late Future<List<Map<String,Object?>>> future;@override void initState(){super.initState();future=DB.instance.customers();}@override Widget build(BuildContext context)=>FutureBuilder(future:future,builder:(context,s)=>Column(children:[Padding(padding:const EdgeInsets.all(10),child:FilledButton.icon(onPressed:()=>createCustomer(context).then((_)=>setState(()=>future=DB.instance.customers())),icon:const Icon(Icons.person_add),label:const Text('عميل جديد'))),Expanded(child:ListView(children:[if(!s.hasData)const Center(child:CircularProgressIndicator())else ...s.data!.map((c)=>Card(child:ListTile(title:Text(c['name'] as String),subtitle:Text(c['phone'] as String? ??''),leading:const Icon(Icons.person,color:gold),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>Ledger(client:c))))))]))]);}
+}
+class Ledger extends StatefulWidget{const Ledger({super.key,required this.client});final Map<String,Object?> client;@override State<Ledger> createState()=>_LedgerState();}
+class _LedgerState extends State<Ledger>{late Future<Map<String,num>> totals;late Future<List<Map<String,Object?>>> sales,collections;int get cid=>widget.client['id'] as int;void load(){totals=DB.instance.customerTotals(cid);sales=DB.instance.customerSales(cid);collections=DB.instance.customerCollections(cid);}@override void initState(){super.initState();load();}Future<void> collect()async{final amount=TextEditingController(),note=TextEditingController();await showDialog(context:context,builder:(ctx)=>AlertDialog(title:const Text('تحصيل من العميل'),content:Column(mainAxisSize:MainAxisSize.min,children:[TextField(controller:amount,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'المبلغ')),TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظات'))]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.collect(cid,int.parse(amount.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(load);}catch(e){toast(ctx,e.toString());}},child:const Text('حفظ'))]));}@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(widget.client['name'] as String)),floatingActionButton:FloatingActionButton.extended(onPressed:collect,icon:const Icon(Icons.payments),label:const Text('تحصيل')),body:FutureBuilder(future:totals,builder:(ctx,s){if(!s.hasData)return const Center(child:CircularProgressIndicator());final t=s.data!;return ListView(padding:const EdgeInsets.all(12),children:[Card(child:ListTile(title:Text('المبيعات: ${money(t['sales']!)}'),subtitle:Text('المستلم: ${money(t['paid']!)}'),trailing:Text('الباقي: ${money(t['debt']!)}',style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))),if((widget.client['note'] as String? ?? '').isNotEmpty)Text('ملاحظات: ${widget.client['note']}'),const Text('فواتير العميل'),FutureBuilder(future:sales,builder:(ctx,ss)=>Column(children:[if(ss.hasData)for(final v in ss.data!)ListTile(title:Text('${v['invoice']} • ${money(v['total'] as num)}'),subtitle:Text(fmtDate(v['created'] as String)))])),const Text('التحصيلات'),FutureBuilder(future:collections,builder:(ctx,cc)=>Column(children:[if(cc.hasData)for(final v in cc.data!)ListTile(title:Text(money(v['amount'] as num)),subtitle:Text(v['note'] as String? ?? ''))]))]);})));}}
+class ReportPage extends StatelessWidget{const ReportPage({super.key});Future<void> pdf()async{final t=await DB.instance.totals(),rows=await DB.instance.sales();final doc=pw.Document();doc.addPage(pw.Page(build:(_)=>pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.start,children:[pw.Text('TUNA PLUS - Sales Summary',style:pw.TextStyle(fontSize:20,fontWeight:pw.FontWeight.bold)),pw.SizedBox(height:10),pw.Text('Sales: ${money(t['sales']!)}'),pw.Text('Paid: ${money(t['paid']!)}'),pw.Text('Collections: ${money(t['collections']!)}'),pw.Text('Debt: ${money(t['debt']!)}'),pw.Text('Weight: ${t['weight']!.toStringAsFixed(3)} kg'),pw.SizedBox(height:12),pw.Table.fromTextArray(data:[['Invoice','Date','Weight','Total','Paid'],...rows.map((r)=>[r['invoice'],(r['created'] as String).substring(0,10),r['kg'],r['total'],r['paid']])])])));await Printing.layoutPdf(onLayout:(_)=>doc.save());}@override Widget build(BuildContext context)=>FutureBuilder(future:DB.instance.totals(),builder:(context,s)=>ListView(padding:const EdgeInsets.all(12),children:[if(s.hasData)...['sales','paid','collections','debt','weight'].map((k)=>Card(child:ListTile(title:Text({'sales':'إجمالي المبيعات','paid':'المدفوع','collections':'التحصيلات','debt':'الديون القائمة','weight':'الوزن المباع'}[k]!),trailing:Text(k=='weight'?`${s.data![k]!.toStringAsFixed(3)} كجم`:money(s.data![k]!))))),FilledButton.icon(onPressed:pdf,icon:const Icon(Icons.picture_as_pdf),label:const Text('تصدير التقرير PDF'))]));}
+}
+class SettingsPage extends StatefulWidget{const SettingsPage({super.key});@override State<SettingsPage> createState()=>_SettingsPageState();}
+class _SettingsPageState extends State<SettingsPage>{final shop=TextEditingController(),phone=TextEditingController(),price=TextEditingController();@override void initState(){super.initState();load();}Future<void> load()async{shop.text=await DB.instance.setting('shop','تونة بلس');phone.text=await DB.instance.setting('phone','');price.text=await DB.instance.setting('price','6500');}Future<void> save()async{await DB.instance.setSetting('shop',shop.text);await DB.instance.setSetting('phone',phone.text);await DB.instance.setSetting('price',price.text);if(mounted){toast(context,'تم حفظ الإعدادات');Navigator.pop(context);}}@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('إعدادات المتجر')),body:ListView(padding:const EdgeInsets.all(16),children:[TextField(controller:shop,decoration:const InputDecoration(labelText:'اسم المتجر')),TextField(controller:phone,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'رقم التواصل')),TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو الافتراضي')),const SizedBox(height:20),FilledButton(onPressed:save,child:const Text('حفظ'))]));}
