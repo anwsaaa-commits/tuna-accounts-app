@@ -1,0 +1,35 @@
+name: Build Tuna Sales Ledger APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate Android platform files
+        run: flutter create . --platforms=android --org com.alshaheen.tunaplus --project-name tuna_sales_ledger --no-pub
+      - name: Set compile SDK 36
+        run: |
+          FILE=android/app/build.gradle
+          if [ -f android/app/build.gradle.kts ]; then FILE=android/app/build.gradle.kts; fi
+          sed -i 's/compileSdk flutter.compileSdkVersion/compileSdk 36/' "$FILE"
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$FILE"
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' "$FILE"
+          grep -Eq 'compileSdk(Version)?[[:space:]]*(=[[:space:]]*)?36' "$FILE"
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+      - run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tuna-sales-ledger-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
