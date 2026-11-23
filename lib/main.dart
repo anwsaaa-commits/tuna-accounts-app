@@ -216,10 +216,12 @@ class _DashboardState extends State<Dashboard> {
       metric('مدفوع الفواتير',money(s.data?['paid']??0),Icons.payments),
       metric('الرصيد المستحق',money(s.data?['debt']??0),Icons.account_balance),
       metric('الوزن المباع','${(s.data?['weight']??0).toStringAsFixed(3)} كجم',Icons.scale),
+      metric('صافي الأرباح التقديري',money(s.data?['netProfit']??0),Icons.trending_up),
     ]),
     const SizedBox(height:12),
     FilledButton.icon(onPressed:()=>newSale(context).then((_)=>setState(()=>data=DB.instance.totals())),icon:const Icon(Icons.add),label:const Text('بيع جديد')),
     OutlinedButton.icon(onPressed:()=>newCustomer(context).then((_)=>setState(()=>data=DB.instance.totals())),icon:const Icon(Icons.person_add),label:const Text('إضافة عميل')),
+    OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const ReservationsPage())),icon:const Icon(Icons.event_available),label:const Text('حجوزات الكمية القادمة')),
     ListTile(title:const Text('الفواتير'),trailing:const Icon(Icons.chevron_left),onTap:()=>widget.onTab(1)),
     ListTile(title:const Text('العملاء وكشف الحساب'),trailing:const Icon(Icons.chevron_left),onTap:()=>widget.onTab(2)),
     ListTile(title:const Text('التقارير'),trailing:const Icon(Icons.chevron_left),onTap:()=>widget.onTab(3)),
@@ -270,6 +272,47 @@ Future<void> newSale(BuildContext context) async {
     await DB.instance.addSale(customerId,weight,price,paid,type,noteCtrl.text);await DB.instance.setSetting('price',price.toString());
     if(ctx.mounted)Navigator.pop(ctx);if(context.mounted)showMessage(context,'تم حفظ البيع بنجاح');
   }catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ البيع'))])));
+}
+
+class ReservationsPage extends StatefulWidget {
+  const ReservationsPage({super.key});
+  @override State<ReservationsPage> createState()=>_ReservationsPageState();
+}
+class _ReservationsPageState extends State<ReservationsPage> {
+  late Future<List<Map<String,Object?>>> future;
+  @override void initState(){super.initState();future=DB.instance.reservations();}
+  void reload()=>setState(()=>future=DB.instance.reservations());
+  Future<void> add() async {
+    final name=TextEditingController(),phone=TextEditingController(),kg=TextEditingController(),price=TextEditingController(text:'6500'),deposit=TextEditingController(text:'0'),note=TextEditingController();
+    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حجز كمية قادمة'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+      TextField(controller:name,decoration:const InputDecoration(labelText:'اسم العميل')),
+      TextField(controller:phone,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'رقم الهاتف')),
+      TextField(controller:kg,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن المطلوب بالكيلو')),
+      TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو المتفق عليه')),
+      TextField(controller:deposit,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'العربون (اختياري)')),
+      TextField(controller:note,maxLines:2,decoration:const InputDecoration(labelText:'ملاحظات')),
+    ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{
+      await DB.instance.addReservation(name.text,phone.text,double.parse(kg.text),int.parse(price.text),int.tryParse(deposit.text)??0,note.text);
+      if(ctx.mounted)Navigator.pop(ctx);if(mounted)reload();
+    }catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ الحجز'))]));
+  }
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('حجوزات الكمية القادمة')),floatingActionButton:FloatingActionButton.extended(onPressed:add,icon:const Icon(Icons.add),label:const Text('حجز جديد')),body:FutureBuilder<List<Map<String,Object?>>>(future:future,builder:(context,s){
+    if(s.hasError)return Center(child:Text('خطأ: ${s.error}'));
+    if(!s.hasData)return const Center(child:CircularProgressIndicator());
+    if(s.data!.isEmpty)return const Center(child:Text('لا توجد حجوزات حتى الآن'));
+    return ListView(padding:const EdgeInsets.all(12),children:s.data!.map((r)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Text(r['customer_name'] as String,style:const TextStyle(color:gold,fontWeight:FontWeight.bold,fontSize:17)),
+      Text('الهاتف: ${r['phone']??'—'}'),
+      Text('الكمية: ${(r['kg'] as num).toStringAsFixed(3)} كجم • سعر الكيلو: ${money(r['price'] as num)}'),
+      Text('الإجمالي: ${money(r['total'] as num)} • العربون: ${money(r['deposit'] as num)}'),
+      Text('الحالة: ${r['status']}'),
+      if((r['note'] as String? ?? '').isNotEmpty)Text('ملاحظات: ${r['note']}'),
+      Row(children:[
+        Expanded(child:DropdownButton<String>(isExpanded:true,value:r['status'] as String,items:['بانتظار وصول الكمية','مؤكد','تم التسليم','ملغي'].map((v)=>DropdownMenuItem(value:v,child:Text(v,overflow:TextOverflow.ellipsis))).toList(),onChanged:(v)async{if(v!=null){await DB.instance.updateReservationStatus(r['id'] as int,v);reload();}})),
+        IconButton(tooltip:'حذف الحجز',onPressed:()async{await DB.instance.deleteReservation(r['id'] as int);reload();},icon:const Icon(Icons.delete_outline,color:Colors.red))
+      ])
+    ])))).toList());
+  }));
 }
 
 class InvoicePage extends StatefulWidget{const InvoicePage({super.key});@override State<InvoicePage> createState()=>_InvoicePageState();}
