@@ -342,7 +342,7 @@ class _InvoicePreviewState extends State<InvoicePreview>{
   @override void initState(){super.initState();loaded=load();}
   Future<void> load()async{client=await DB.instance.customerById(widget.sale['customer_id'] as int?);storeInfo={'shop':await DB.instance.setting('shop','تونة بلس'),'phone':await DB.instance.setting('phone','777521058'),'bank':await DB.instance.setting('bank','254127488'),'owner':await DB.instance.setting('owner','محمد صالح بن صالح علي الخلاقي'),'address':await DB.instance.setting('address','فوه المتضررين بجانب مسجد هائل خلف البريد')};if(mounted)setState((){});}
   String val(String key,String fallback)=>widget.sale[key]?.toString()??fallback;
-  Future<void> printInvoice()async{
+  Future<pw.Document> createInvoiceDocument()async{
     final shop=await DB.instance.setting('shop','تونة بلس');
     final phone=await DB.instance.setting('phone','777521058');
     final bank=await DB.instance.setting('bank','254127488');
@@ -378,8 +378,10 @@ class _InvoicePreviewState extends State<InvoicePreview>{
       pw.Text('العنوان: $address',style:normal,textAlign:pw.TextAlign.right),
       pw.SizedBox(height:18),pw.Center(child:pw.Text('شكراً لثقتكم • تونة بلس',style:bold))
     ]))));
-    await Printing.layoutPdf(onLayout:(_)=>doc.save());
+    return doc;
   }
+  Future<void> printInvoice() async { final doc=await createInvoiceDocument(); await Printing.layoutPdf(onLayout:(_)=>doc.save()); }
+  Future<void> shareInvoice() async { final doc=await createInvoiceDocument(); await Printing.sharePdf(bytes:await doc.save(),filename:'TunaPlus-${widget.sale['invoice']}.pdf'); }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('فاتورة العميل')),body:FutureBuilder<void>(future:loaded,builder:(context,s)=>ListView(padding:const EdgeInsets.all(16),children:[
     Card(child:Padding(padding:const EdgeInsets.all(20),child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
       const Center(child:Icon(Icons.set_meal,color:gold,size:46)),
@@ -405,7 +407,7 @@ class _InvoicePreviewState extends State<InvoicePreview>{
       const SizedBox(height:12),const Center(child:Text('شكراً لثقتكم • تونة بلس',style:TextStyle(color:gold))),
     ]))),
     FilledButton.icon(onPressed:printInvoice,icon:const Icon(Icons.picture_as_pdf),label:const Text('طباعة / حفظ الفاتورة PDF')),
-    OutlinedButton.icon(onPressed:()=>Share.share('تونة بلس • فاتورة مبيعات\\nرقم: ${widget.sale['invoice']}\\nالعميل: ${client?['name']??'عميل نقدي'}\\nالوزن: ${widget.sale['kg']} كجم\\nسعر الكيلو: ${money(widget.sale['price'] as num)}\\nالإجمالي: ${money(widget.sale['total'] as num)}\\nالمدفوع: ${money(widget.sale['paid'] as num)}\\nالمتبقي: ${money((widget.sale['total'] as num)-(widget.sale['paid'] as num))}\\nالحساب البنكي: ${storeInfo['bank']??'254127488'}\\n${storeInfo['owner']??'محمد صالح بن صالح علي الخلاقي'}\\nجوال: ${storeInfo['phone']??'777521058'}\\nالعنوان: ${storeInfo['address']??'فوه المتضررين بجانب مسجد هائل خلف البريد'}'),icon:const Icon(Icons.share),label:const Text('مشاركة الفاتورة للعميل')),
+    OutlinedButton.icon(onPressed:shareInvoice,icon:const Icon(Icons.share),label:const Text('مشاركة الفاتورة للعميل')),
   ])));
 }
 Widget _invoiceRow(String label,String value,{bool strong=false})=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[Text(label,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null),Flexible(child:Text(value,textAlign:TextAlign.end,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null))]));
@@ -529,6 +531,7 @@ class ReportsPage extends StatelessWidget{
           'collections': 'التحصيلات',
           'debt': 'الديون القائمة',
           'weight': 'الوزن المباع',
+          'netProfit': 'صافي الأرباح التقديري',
         };
         return ListView(
           padding: const EdgeInsets.all(12),
