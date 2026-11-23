@@ -295,7 +295,10 @@ class _DashboardState extends State<Dashboard> {
 
 Future<void> newCustomer(BuildContext context) async {
   final name=TextEditingController(),phone=TextEditingController(),note=TextEditingController();
+  bool selectingContact=false;
   Future<void> chooseContact(BuildContext dialogContext,StateSetter setDialog) async {
+    if(selectingContact)return;
+    selectingContact=true;
     // Keep the user informed while the native permission prompt or contact query is running.
     bool loadingDialogOpen=false;
     try {
@@ -357,10 +360,13 @@ Future<void> newCustomer(BuildContext context) async {
     } catch(e){
       if(dialogContext.mounted&&loadingDialogOpen){Navigator.of(dialogContext,rootNavigator:true).pop();loadingDialogOpen=false;}
       if(dialogContext.mounted)showMessage(dialogContext,'تعذر فتح جهات الاتصال: $e');
+    } finally {
+      selectingContact=false;
+      if(dialogContext.mounted)setDialog((){});
     }
   }
   await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('إضافة عميل'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-    SizedBox(width:double.maxFinite,child:OutlinedButton.icon(onPressed:()=>chooseContact(ctx,setDialog),icon:const Icon(Icons.contacts),label:const Text('اختيار من جهات الاتصال'))),
+    SizedBox(width:double.maxFinite,child:OutlinedButton.icon(onPressed:selectingContact?null:()=>chooseContact(ctx,setDialog),icon:selectingContact?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.contacts),label:Text(selectingContact?'جارٍ فتح جهات الاتصال...':'اختيار من جهات الاتصال'))),
     TextField(controller:name,decoration:const InputDecoration(labelText:'اسم العميل')),
     TextField(controller:phone,decoration:const InputDecoration(labelText:'الهاتف'),keyboardType:TextInputType.phone),
     TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظات')),
