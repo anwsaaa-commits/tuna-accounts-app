@@ -213,9 +213,9 @@ class DB {
         saleRemaining-=take;
       }
     }
-    final totalSold=sales.fold<num>(0,(sum,s)=>sum+(s['kg'] as num));
+    final totalNetStock=batches.fold<num>(0,(sum,b)=>sum+(b['net_kg'] as num));
     final expenses=expenseRows.fold<num>(0,(sum,e)=>sum+(e['amount'] as num));
-    final expenseShare=totalSold>0?expenses*(soldKg/totalSold):0.0;
+    final expenseShare=totalNetStock>0?expenses*(soldKg/totalNetStock):0.0;
     final costOfSold=soldKg*unitCost;
     final remainingKg=netKg-soldKg;
     return {'batch':batch,'netKg':netKg,'cost':totalCost,'unitCost':unitCost,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseShare,'profit':revenue-costOfSold-expenseShare,'expenseTotal':expenses,'allocations':allocatedSales};
