@@ -125,7 +125,7 @@ jobs:
               if not rel:
                   raise SystemExit("Could not find Kotlin release build type")
               body = s[rel[1]+1:rel[2]]
-              body = re.sub(r"(?m)^\s*signingConfig\s*=\s*signingConfigs\.getByName\(\"debug\")\s*$", "", body)
+              body = re.sub(r"(?m)^\s*signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)\s*$", "", body)
               if 'signingConfig = signingConfigs.getByName("release")' not in body:
                   body = '\n                      signingConfig = signingConfigs.getByName("release")\n' + body
               s = s[:rel[1]+1] + body + s[rel[2]:]
