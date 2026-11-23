@@ -42,7 +42,6 @@ class TunaApp extends StatelessWidget {
         appBarTheme: const AppBarTheme(backgroundColor: dark, foregroundColor: gold, centerTitle: true),
         cardTheme: const CardThemeData(color: panel),
       ),
-      builder: (context, child) => Directionality(textDirection: TextDirection.rtl, child: child ?? const SizedBox()),
       home: const AppShell(),
     );
   }
