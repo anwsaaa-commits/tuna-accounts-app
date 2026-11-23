@@ -209,7 +209,7 @@ jobs:
           echo "Verified: APK signature matches permanent release keystore."
       - uses: actions/upload-artifact@v4
         with:
-          name: tuna-plus-1.1.1-signed-release-apk
+          name: tuna-plus-1.1.2-signed-release-apk
           path: |
             build/app/outputs/flutter-apk/app-release.apk
             signing-certificate.txt
