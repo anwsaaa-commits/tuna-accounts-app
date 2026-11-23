@@ -579,6 +579,8 @@ class ReportsPage extends StatelessWidget{
           pw.Text('الربح من المبيعات بعد المصروفات: ${number(t['netProfit'])} ر.ي • ${(t['profitFinal']??0)>0?'نهائي':'غير نهائي بسبب وجود مخزون'}',style:bold),
           pw.Text('المخزون الصافي المتبقي: ${number(t['remainingKg'])} كجم',style:normal),
           pw.Text('قيمة تكلفة المخزون المتبقي: ${number(t['inventoryCost'])} ر.ي',style:normal),
+          pw.Text('إجمالي المصروفات المسجلة: ${number(t['expenses'])} ر.ي',style:normal),
+          pw.Text('المصروفات المحملة على المبيعات: ${number(t['expensesAllocated'])} ر.ي',style:normal),
         ])),
         pw.SizedBox(height:14),
         pw.Text('تفاصيل الفواتير',style:pw.TextStyle(font:arabicBold,fontSize:15)),
@@ -613,6 +615,7 @@ class ReportsPage extends StatelessWidget{
           'remainingKg':'المخزون الصافي المتبقي',
           'inventoryCost':'تكلفة المخزون المتبقي',
           'expenses':'إجمالي المصروفات',
+          'expensesAllocated':'مصروفات محسوبة على المباع',
         };
         return ListView(
           padding: const EdgeInsets.all(12),
