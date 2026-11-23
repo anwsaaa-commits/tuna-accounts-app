@@ -87,7 +87,8 @@ class DB {
     if (!kg.isFinite || kg <= 0 || price <= 0 || paid < 0) throw Exception('تحقق من الوزن والسعر والمدفوع');
     if (type != 'نقدي' && type != 'آجل') throw Exception('نوع البيع غير صحيح');
     if (type == 'آجل' && customerId == null) throw Exception('البيع الآجل يتطلب اختيار عميل لتسجيل الدين في كشف حسابه');
-    final available = (await (await database).rawQuery('SELECT COALESCE(SUM(net_kg),0) net FROM private_batches')).first['net'] as num;
+    final db = await database;
+    final available = (await db.rawQuery('SELECT COALESCE(SUM(net_kg),0) net FROM private_batches')).first['net'] as num;
     final sold = (await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
     if (available - sold + 0.0001 < kg) throw Exception('الوزن المطلوب يتجاوز المخزون الصافي المتاح (${(available-sold).toStringAsFixed(3)} كجم).');
     final total = (kg * price).round();
@@ -297,7 +298,7 @@ Future<void> newCustomer(BuildContext context) async {
               context:dialogContext,
               builder:(phoneContext)=>AlertDialog(
                 title:const Text('اختر رقم الهاتف'),
-                content:Column(mainAxisSize:MainAxisSize.min,children:selected.phones.map((p)=>ListTile(title:Text(p.number),subtitle:Text(p.label),onTap:()=>Navigator.pop(phoneContext,p.number))).toList()),
+                content:Column(mainAxisSize:MainAxisSize.min,children:selected.phones.map((p)=>ListTile(title:Text(p.number),subtitle:Text(p.label.name),onTap:()=>Navigator.pop(phoneContext,p.number))).toList()),
                 actions:[TextButton(onPressed:()=>Navigator.pop(phoneContext),child:const Text('إلغاء'))],
               ),
             );
