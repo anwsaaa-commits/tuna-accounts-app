@@ -90,7 +90,6 @@ jobs:
           else:
               raise SystemExit("Android app Gradle file not found")
           PY
-          rm -f android/key.properties
       - name: Add contacts permission
         run: |
           python3 - <<'PY'
