@@ -27,6 +27,7 @@ jobs:
           test -n "$KEY_PASSWORD" || (echo "Missing GitHub secret KEY_PASSWORD" && exit 1)
           test -n "$KEY_ALIAS" || (echo "Missing GitHub secret KEY_ALIAS" && exit 1)
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/tuna-plus-release.jks
+          test -s android/app/tuna-plus-release.jks
           cat > android/key.properties <<EOF
           storePassword=$KEYSTORE_PASSWORD
           keyPassword=$KEY_PASSWORD
@@ -35,6 +36,25 @@ jobs:
           EOF
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
+          def find_block(text, marker, start=0):
+              pos = text.find(marker, start)
+              if pos < 0:
+                  return None
+              opening = text.find("{", pos)
+              if opening < 0:
+                  return None
+              depth = 0
+              for i in range(opening, len(text)):
+                  if text[i] == "{":
+                      depth += 1
+                  elif text[i] == "}":
+                      depth -= 1
+                      if depth == 0:
+                          return pos, opening, i
+              return None
+
           groovy = Path("android/app/build.gradle")
           kotlin = Path("android/app/build.gradle.kts")
           if groovy.exists():
@@ -46,22 +66,31 @@ jobs:
           keystoreProperties.load(new java.io.FileInputStream(keystorePropertiesFile))
 
           android {""", 1)
-              if "signingConfigs {" not in s:
-                  s = s.replace("    buildTypes {", """    signingConfigs {
-                  release {
-                      keyAlias keystoreProperties['keyAlias']
-                      keyPassword keystoreProperties['keyPassword']
-                      storeFile file(keystoreProperties['storeFile'])
-                      storePassword keystoreProperties['storePassword']
-                  }
+              cfg = find_block(s, "signingConfigs {")
+              release_cfg = """
+              release {
+                  keyAlias keystoreProperties['keyAlias']
+                  keyPassword keystoreProperties['keyPassword']
+                  storeFile file(keystoreProperties['storeFile'])
+                  storePassword keystoreProperties['storePassword']
               }
-              buildTypes {""", 1)
-              marker = "    buildTypes {"
-              i = s.index(marker)
-              head, tail = s[:i], s[i:]
-              tail = tail.replace("        release {", """        release {
-                      signingConfig signingConfigs.release""", 1)
-              p.write_text(head + tail)
+          """
+              if cfg:
+                  s = s[:cfg[2]] + release_cfg + s[cfg[2]:]
+              else:
+                  s = s.replace("    buildTypes {", "    signingConfigs {\n" + release_cfg + "    }\n    buildTypes {", 1)
+              bt = find_block(s, "buildTypes {")
+              if not bt:
+                  raise SystemExit("Could not find Groovy buildTypes block")
+              rel = find_block(s, "release {", bt[1])
+              if not rel:
+                  raise SystemExit("Could not find Groovy release build type")
+              body = s[rel[1]+1:rel[2]]
+              body = re.sub(r"(?m)^\s*signingConfig\s+signingConfigs\.debug\s*$", "", body)
+              if "signingConfig signingConfigs.release" not in body:
+                  body = "\n                      signingConfig signingConfigs.release\n" + body
+              s = s[:rel[1]+1] + body + s[rel[2]:]
+              p.write_text(s)
           elif kotlin.exists():
               p = kotlin
               s = p.read_text()
@@ -74,25 +103,38 @@ jobs:
           keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 
           android {""", 1)
-              if 'create("release")' not in s:
-                  s = s.replace("    buildTypes {", """    signingConfigs {
-                  create("release") {
-                      keyAlias = keystoreProperties["keyAlias"] as String
-                      keyPassword = keystoreProperties["keyPassword"] as String
-                      storeFile = file(keystoreProperties["storeFile"] as String)
-                      storePassword = keystoreProperties["storePassword"] as String
-                  }
+              cfg = find_block(s, "signingConfigs {")
+              release_cfg = """
+              create("release") {
+                  keyAlias = keystoreProperties["keyAlias"] as String
+                  keyPassword = keystoreProperties["keyPassword"] as String
+                  storeFile = file(keystoreProperties["storeFile"] as String)
+                  storePassword = keystoreProperties["storePassword"] as String
               }
-              buildTypes {""", 1)
-              marker = "    buildTypes {"
-              i = s.index(marker)
-              head, tail = s[:i], s[i:]
-              tail = tail.replace('        getByName("release") {', """        getByName("release") {
-                      signingConfig = signingConfigs.getByName("release")""", 1)
-              p.write_text(head + tail)
+          """
+              if cfg:
+                  s = s[:cfg[2]] + release_cfg + s[cfg[2]:]
+              else:
+                  s = s.replace("    buildTypes {", "    signingConfigs {\n" + release_cfg + "    }\n    buildTypes {", 1)
+              bt = find_block(s, "buildTypes {")
+              if not bt:
+                  raise SystemExit("Could not find Kotlin buildTypes block")
+              rel = find_block(s, 'getByName("release") {', bt[1])
+              if not rel:
+                  rel = find_block(s, 'create("release") {', bt[1])
+              if not rel:
+                  raise SystemExit("Could not find Kotlin release build type")
+              body = s[rel[1]+1:rel[2]]
+              body = re.sub(r"(?m)^\s*signingConfig\s*=\s*signingConfigs\.getByName\(\"debug\")\s*$", "", body)
+              if 'signingConfig = signingConfigs.getByName("release")' not in body:
+                  body = '\n                      signingConfig = signingConfigs.getByName("release")\n' + body
+              s = s[:rel[1]+1] + body + s[rel[2]:]
+              p.write_text(s)
           else:
               raise SystemExit("Android app Gradle file not found")
           PY
+          grep -q 'key.properties' android/app/build.gradle 2>/dev/null || grep -q 'key.properties' android/app/build.gradle.kts
+          grep -q 'tuna-plus-release.jks' android/key.properties
       - name: Add contacts permission
         run: |
           python3 - <<'PY'
@@ -121,12 +163,33 @@ jobs:
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
       - run: flutter build apk --release
-      - name: Verify APK signature
+      - name: Verify APK signature matches release keystore
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
+          set -euo pipefail
           APK=build/app/outputs/flutter-apk/app-release.apk
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          test -n "$APKSIGNER"
           "$APKSIGNER" verify --verbose "$APK"
           "$APKSIGNER" verify --print-certs "$APK" | tee signing-certificate.txt
+          keytool -exportcert -alias "$KEY_ALIAS" -keystore android/app/tuna-plus-release.jks -storepass "$KEYSTORE_PASSWORD" -rfc | openssl x509 -noout -fingerprint -sha256 > keystore-fingerprint.txt
+          EXPECTED=$(sed 's/.*=//;s/://g' keystore-fingerprint.txt | tr '[:upper:]' '[:lower:]')
+          ACTUAL=$(grep -i 'certificate SHA-256 digest:' signing-certificate.txt | head -1 | sed 's/.*digest: //' | tr '[:upper:]' '[:lower:]')
+          test -n "$EXPECTED"
+          test -n "$ACTUAL"
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "ERROR: APK certificate does not match the release keystore. Refusing to upload."
+            echo "Expected: $EXPECTED"
+            echo "Actual:   $ACTUAL"
+            exit 1
+          fi
+          if grep -qi 'CN=Android Debug' signing-certificate.txt; then
+            echo "ERROR: APK is signed with Android Debug certificate."
+            exit 1
+          fi
+          echo "Verified: APK signature matches permanent release keystore."
       - uses: actions/upload-artifact@v4
         with:
           name: tuna-plus-1.1.1-signed-release-apk
