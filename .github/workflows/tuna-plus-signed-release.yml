@@ -123,7 +123,9 @@ jobs:
               if not rel:
                   rel = find_block(s, 'create("release") {', bt[1])
               if not rel:
-                  raise SystemExit("Could not find Kotlin release build type")
+                  rel = find_block(s, "release {", bt[1])
+              if not rel:
+                  raise SystemExit("Could not find Kotlin release build type (release {)")
               body = s[rel[1]+1:rel[2]]
               body = re.sub(r'(?m)^\s*signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)\s*$', "", body)
               if 'signingConfig = signingConfigs.getByName("release")' not in body:
