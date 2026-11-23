@@ -261,14 +261,33 @@ Future<void> newCustomer(BuildContext context) async {
       if(!allowed){if(dialogContext.mounted)showMessage(dialogContext,'يرجى السماح بالوصول إلى جهات الاتصال');return;}
       final contacts=await FlutterContacts.getContacts(withProperties:true);
       if(!dialogContext.mounted)return;
-      final selected=await showDialog<Contact>(context:dialogContext,builder:(pickContext)=>AlertDialog(
-        title:const Text('اختر من جهات الاتصال'),
-        content:SizedBox(width:double.maxFinite,height:420,child:contacts.isEmpty?const Center(child:Text('لا توجد جهات اتصال')):ListView.builder(
-          itemCount:contacts.length,itemBuilder:(context,index){final contact=contacts[index];final number=contact.phones.isEmpty?'':contact.phones.first.number;return ListTile(
-            leading:const Icon(Icons.person,color:gold),title:Text(contact.displayName),subtitle:Text(number.isEmpty?'لا يوجد رقم هاتف':number),
-            onTap:()=>Navigator.pop(pickContext,contact));})),
-        actions:[TextButton(onPressed:()=>Navigator.pop(pickContext),child:const Text('إغلاق'))]));
-      if(selected!=null){setDialog(()=>name.text=selected.displayName);if(selected.phones.isNotEmpty)setDialog(()=>phone.text=selected.phones.first.number);}
+      final searchController=TextEditingController();
+      final selected=await showDialog<Contact>(context:dialogContext,builder:(pickContext)=>StatefulBuilder(builder:(pickContext,refreshPicker){
+        final query=searchController.text.trim().toLowerCase();
+        final filtered=contacts.where((contact){
+          final number=contact.phones.map((p)=>p.number).join(' ');
+          return contact.displayName.toLowerCase().contains(query)||number.toLowerCase().contains(query);
+        }).toList();
+        return AlertDialog(title:const Text('اختر من جهات الاتصال'),
+          content:SizedBox(width:double.maxFinite,height:440,child:Column(children:[
+            TextField(controller:searchController,decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'بحث بالاسم أو رقم الهاتف'),onChanged:(_)=>refreshPicker((){})),
+            const SizedBox(height:6),
+            Expanded(child:filtered.isEmpty?const Center(child:Text('لا توجد نتائج')):ListView.builder(
+              itemCount:filtered.length,itemBuilder:(context,index){final contact=filtered[index];final number=contact.phones.isEmpty?'':contact.phones.first.number;return ListTile(
+                leading:const Icon(Icons.person,color:gold),title:Text(contact.displayName),subtitle:Text(number.isEmpty?'لا يوجد رقم هاتف':number),
+                onTap:()=>Navigator.pop(pickContext,contact));}))
+          ])),actions:[TextButton(onPressed:()=>Navigator.pop(pickContext),child:const Text('إغلاق'))];
+      }));
+      searchController.dispose();
+      if(selected!=null){
+        setDialog(()=>name.text=selected.displayName);
+        if(selected.phones.isNotEmpty){
+          String? chosen=selected.phones.first.number;
+          if(selected.phones.length>1 && dialogContext.mounted){
+            chosen=await showDialog<String>(context:dialogContext,builder:(phoneContext)=>AlertDialog(title:const Text('اختر رقم الهاتف'),content:Column(mainAxisSize:MainAxisSize.min,children:selected.phones.map((p)=>ListTile(title:Text(p.number),subtitle:Text(p.label),onTap:()=>Navigator.pop(phoneContext,p.number))).toList()),actions:[TextButton(onPressed:()=>Navigator.pop(phoneContext),child:const Text('إلغاء'))]);
+          }
+          if(chosen!=null)setDialog(()=>phone.text=chosen!);
+        }}
     } catch(e){if(dialogContext.mounted)showMessage(dialogContext,'تعذر قراءة جهات الاتصال: $e');}
   }
   await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('إضافة عميل'),content:Column(mainAxisSize:MainAxisSize.min,children:[
