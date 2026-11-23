@@ -228,11 +228,28 @@ class _DashboardState extends State<Dashboard> {
 
 Future<void> newCustomer(BuildContext context) async {
   final name=TextEditingController(),phone=TextEditingController(),note=TextEditingController();
-  await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('إضافة عميل'),content:Column(mainAxisSize:MainAxisSize.min,children:[
+  Future<void> chooseContact(BuildContext dialogContext,StateSetter setDialog) async {
+    try {
+      final allowed=await FlutterContacts.requestPermission();
+      if(!allowed){if(dialogContext.mounted)showMessage(dialogContext,'يرجى السماح بالوصول إلى جهات الاتصال');return;}
+      final contacts=await FlutterContacts.getContacts(withProperties:true);
+      if(!dialogContext.mounted)return;
+      final selected=await showDialog<Contact>(context:dialogContext,builder:(pickContext)=>AlertDialog(
+        title:const Text('اختر من جهات الاتصال'),
+        content:SizedBox(width:double.maxFinite,height:420,child:contacts.isEmpty?const Center(child:Text('لا توجد جهات اتصال')):ListView.builder(
+          itemCount:contacts.length,itemBuilder:(context,index){final contact=contacts[index];final number=contact.phones.isEmpty?'':contact.phones.first.number;return ListTile(
+            leading:const Icon(Icons.person,color:gold),title:Text(contact.displayName),subtitle:Text(number.isEmpty?'لا يوجد رقم هاتف':number),
+            onTap:()=>Navigator.pop(pickContext,contact));})),
+        actions:[TextButton(onPressed:()=>Navigator.pop(pickContext),child:const Text('إغلاق'))]));
+      if(selected!=null){setDialog(()=>name.text=selected.displayName);if(selected.phones.isNotEmpty)setDialog(()=>phone.text=selected.phones.first.number);}
+    } catch(e){if(dialogContext.mounted)showMessage(dialogContext,'تعذر قراءة جهات الاتصال: $e');}
+  }
+  await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('إضافة عميل'),content:Column(mainAxisSize:MainAxisSize.min,children:[
+    OutlinedButton.icon(onPressed:()=>chooseContact(ctx,setDialog),icon:const Icon(Icons.contacts),label:const Text('اختيار من جهات الاتصال')),
     TextField(controller:name,decoration:const InputDecoration(labelText:'اسم العميل')),
     TextField(controller:phone,decoration:const InputDecoration(labelText:'الهاتف')),
     TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظات')),
-  ]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addCustomer(name.text,phone.text,note.text);if(ctx.mounted)Navigator.pop(ctx);}catch(e){showMessage(ctx,e.toString());}},child:const Text('حفظ'))]));
+  ]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addCustomer(name.text,phone.text,note.text);if(ctx.mounted)Navigator.pop(ctx);}catch(e){showMessage(ctx,e.toString());}},child:const Text('حفظ'))])));
 }
 
 Future<void> newSale(BuildContext context) async {
