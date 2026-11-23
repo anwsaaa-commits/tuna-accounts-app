@@ -302,7 +302,7 @@ Future<void> newCustomer(BuildContext context) async {
               ),
             );
           }
-          if(chosen!=null)setDialog(()=>phone.text=chosen);
+          if(chosen!=null)setDialog(()=>phone.text=chosen!);
         }
       }
     } catch(e){if(dialogContext.mounted)showMessage(dialogContext,'تعذر قراءة جهات الاتصال: $e');}
