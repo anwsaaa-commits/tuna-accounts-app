@@ -1,7 +1,7 @@
 name: Build Tuna Sales Ledger APK
 on:
   push:
-    branches: [main]
+    branches: [main, tuna-plus-official-update-1.1.0]
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,6 +16,17 @@ jobs:
           cache: true
       - name: Generate Android platform files
         run: flutter create . --platforms=android --org com.alshaheen.tunaplus --project-name tuna_sales_ledger --no-pub
+      - name: Add contacts permission
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          permission = '    <uses-permission android:name="android.permission.READ_CONTACTS"/>\\n'
+          if "android.permission.READ_CONTACTS" not in s:
+              s = s.replace("<application", permission + "    <application", 1)
+          p.write_text(s)
+          PY
       - name: Set app compile SDK 36
         run: |
           FILE=android/app/build.gradle
@@ -27,14 +38,14 @@ jobs:
       - run: flutter pub get
       - name: Raise cached Flutter plugin compile SDK to 36
         run: |
-          find "$HOME/.pub-cache" -path '*/android/build.gradle*' -type f -print0 | xargs -0 -r sed -i -E             's/compileSdk[[:space:]]+flutter\.compileSdkVersion/compileSdk 36/g; s/compileSdk[[:space:]]*=[[:space:]]*flutter\.compileSdkVersion/compileSdk = 36/g; s/compileSdkVersion[[:space:]]+flutter\.compileSdkVersion/compileSdkVersion 36/g; s/compileSdkVersion[[:space:]]+34/compileSdkVersion 36/g; s/compileSdk[[:space:]]+34/compileSdk 36/g; s/compileSdk[[:space:]]*=[[:space:]]*34/compileSdk = 36/g'
+          find "$HOME/.pub-cache" -path '*/android/build.gradle*' -type f -print0 | xargs -0 -r sed -i -E 's/compileSdk[[:space:]]+flutter\\.compileSdkVersion/compileSdk 36/g; s/compileSdk[[:space:]]*=[[:space:]]*flutter\\.compileSdkVersion/compileSdk = 36/g; s/compileSdkVersion[[:space:]]+flutter\\.compileSdkVersion/compileSdkVersion 36/g; s/compileSdkVersion[[:space:]]+34/compileSdkVersion 36/g; s/compileSdk[[:space:]]+34/compileSdk 36/g; s/compileSdk[[:space:]]*=[[:space:]]*34/compileSdk = 36/g'
           echo "Updated cached plugin Android compileSdk declarations:"
-          grep -R -n -E 'compileSdk(Version)?[[:space:]]*(=)?[[:space:]]*(34|flutter\.compileSdkVersion)' "$HOME/.pub-cache" --include='build.gradle' --include='build.gradle.kts' || true
+          grep -R -n -E 'compileSdk(Version)?[[:space:]]*(=)?[[:space:]]*(34|flutter\\.compileSdkVersion)' "$HOME/.pub-cache" --include='build.gradle' --include='build.gradle.kts' || true
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
-          name: tuna-sales-ledger-release-apk
+          name: tuna-plus-1.1.0-test-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
