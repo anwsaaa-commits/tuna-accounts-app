@@ -87,8 +87,7 @@ class DB {
     if (!kg.isFinite || kg <= 0 || price <= 0 || paid < 0) throw Exception('تحقق من الوزن والسعر والمدفوع');
     if (type != 'نقدي' && type != 'آجل') throw Exception('نوع البيع غير صحيح');
     if (type == 'آجل' && customerId == null) throw Exception('البيع الآجل يتطلب اختيار عميل لتسجيل الدين في كشف حسابه');
-    final db = await database;
-    final available = (await db.rawQuery('SELECT COALESCE(SUM(net_kg),0) net FROM private_batches')).first['net'] as num;
+    final available = (await (await database).rawQuery('SELECT COALESCE(SUM(net_kg),0) net FROM private_batches')).first['net'] as num;
     final sold = (await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
     if (available - sold + 0.0001 < kg) throw Exception('الوزن المطلوب يتجاوز المخزون الصافي المتاح (${(available-sold).toStringAsFixed(3)} كجم).');
     final total = (kg * price).round();
@@ -122,9 +121,10 @@ class DB {
     final remainingKg = stockNetKg - soldKg;
     final costOfSold = soldKg * costPerNetKg;
     final inventoryCost = (remainingKg > 0 ? remainingKg : 0) * costPerNetKg;
-    final netProfit = (s['total'] as num) - costOfSold - expenseTotal;
+    final expensesAllocated = stockNetKg > 0 ? expenseTotal * (soldKg / stockNetKg).clamp(0,1) : expenseTotal;
+    final netProfit = (s['total'] as num) - costOfSold - expensesAllocated;
     final finalProfit = remainingKg <= 0.0001;
-    return {'sales':s['total'] as num,'paid':s['paid'] as num,'weight':soldKg,'collections':c,'debt':due-c,'purchaseCost':purchases['cost'] as num,'costPerKg':costPerNetKg,'costOfSold':costOfSold,'inventoryCost':inventoryCost,'stockNetKg':stockNetKg,'remainingKg':remainingKg,'expenses':expenseTotal,'netProfit':netProfit,'profitFinal':finalProfit ? 1 : 0};
+    return {'sales':s['total'] as num,'paid':s['paid'] as num,'weight':soldKg,'collections':c,'debt':due-c,'purchaseCost':purchases['cost'] as num,'costPerKg':costPerNetKg,'costOfSold':costOfSold,'inventoryCost':inventoryCost,'stockNetKg':stockNetKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':expensesAllocated,'netProfit':netProfit,'profitFinal':finalProfit ? 1 : 0};
   }
   Future<List<Map<String,Object?>>> reservations() async => (await database).query('reservations',orderBy:'created DESC');
   Future<int> addReservation(String name,String phone,double kg,int price,int deposit,String note) async {
