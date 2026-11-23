@@ -238,17 +238,68 @@ class _CustomerLedgerState extends State<CustomerLedger>{
     final amount=TextEditingController(),note=TextEditingController();
     await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('تحصيل من العميل'),content:Column(mainAxisSize:MainAxisSize.min,children:[TextField(controller:amount,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'المبلغ')),TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظات'))]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.collect(id,int.parse(amount.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(load);}catch(e){showMessage(ctx,e.toString());}},child:const Text('حفظ'))]));
   }
-  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(widget.client['name'] as String)),floatingActionButton:FloatingActionButton.extended(onPressed:receivePayment,icon:const Icon(Icons.payments),label:const Text('تحصيل')),body:FutureBuilder<Map<String,num>>(future:balance,builder:(context,s){
-    if(s.hasError)return Center(child:Text('خطأ: ${s.error}'));if(!s.hasData)return const Center(child:CircularProgressIndicator());final t=s.data!;
-    return ListView(padding:const EdgeInsets.all(12),children:[
-      Card(child:ListTile(title:Text('المبيعات: ${money(t['sales']!)}'),subtitle:Text('المستلم: ${money(t['paid']!)}'),trailing:Text('المتبقي: ${money(t['debt']!)}',style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))),
-      if((widget.client['note'] as String? ?? '').isNotEmpty)Text('ملاحظات العميل: ${widget.client['note']}'),
-      const Text('الفواتير',style:TextStyle(fontWeight:FontWeight.bold)),
-      FutureBuilder<List<Map<String,Object?>>>(future:invoices,builder:(context,ss)=>Column(children:[if(ss.hasData)for(final v in ss.data!)ListTile(title:Text('${v['invoice']} • ${money(v['total'] as num)}'),subtitle:Text(dateLabel(v['created'] as String)))])),
-      const Text('التحصيلات',style:TextStyle(fontWeight:FontWeight.bold)),
-      FutureBuilder<List<Map<String,Object?>>>(future:receipts,builder:(context,cc)=>Column(children:[if(cc.hasData)for(final v in cc.data!)ListTile(title:Text(money(v['amount'] as num)),subtitle:Text(v['note'] as String? ?? ''))])),
-    ]);
-  })));
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.client['name'] as String)),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: receivePayment,
+        icon: const Icon(Icons.payments),
+        label: const Text('تحصيل'),
+      ),
+      body: FutureBuilder<Map<String, num>>(
+        future: balance,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) return Center(child: Text('خطأ: ${snapshot.error}'));
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          final totals = snapshot.data!;
+          return ListView(
+            padding: const EdgeInsets.all(12),
+            children: [
+              Card(
+                child: ListTile(
+                  title: Text('المبيعات: ${money(totals['sales']!)}'),
+                  subtitle: Text('المستلم: ${money(totals['paid']!)}'),
+                  trailing: Text(
+                    'المتبقي: ${money(totals['debt']!)}',
+                    style: const TextStyle(color: gold, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              if ((widget.client['note'] as String? ?? '').isNotEmpty)
+                Text('ملاحظات العميل: ${widget.client['note']}'),
+              const Text('الفواتير', style: TextStyle(fontWeight: FontWeight.bold)),
+              FutureBuilder<List<Map<String, Object?>>>(
+                future: invoices,
+                builder: (context, invoiceSnapshot) {
+                  if (!invoiceSnapshot.hasData) return const SizedBox.shrink();
+                  return Column(
+                    children: invoiceSnapshot.data!.map((invoice) => ListTile(
+                      title: Text('${invoice['invoice']} • ${money(invoice['total'] as num)}'),
+                      subtitle: Text(dateLabel(invoice['created'] as String)),
+                    )).toList(),
+                  );
+                },
+              ),
+              const Text('التحصيلات', style: TextStyle(fontWeight: FontWeight.bold)),
+              FutureBuilder<List<Map<String, Object?>>>(
+                future: receipts,
+                builder: (context, receiptSnapshot) {
+                  if (!receiptSnapshot.hasData) return const SizedBox.shrink();
+                  return Column(
+                    children: receiptSnapshot.data!.map((receipt) => ListTile(
+                      title: Text(money(receipt['amount'] as num)),
+                      subtitle: Text(receipt['note'] as String? ?? ''),
+                    )).toList(),
+                  );
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }
 class ReportsPage extends StatelessWidget{
   const ReportsPage({super.key});
@@ -261,10 +312,42 @@ class ReportsPage extends StatelessWidget{
     ])));
     await Printing.layoutPdf(onLayout:(_)=>doc.save());
   }
-  @override Widget build(BuildContext context)=>FutureBuilder<Map<String,num>>(future:DB.instance.totals(),builder:(context,s)=>ListView(padding:const EdgeInsets.all(12),children:[
-    if(s.hasError)Text('خطأ: ${s.error}') else if(s.hasData)...['sales','paid','collections','debt','weight'].map((k)=>Card(child:ListTile(title:Text({'sales':'إجمالي المبيعات','paid':'مدفوع الفواتير','collections':'التحصيلات','debt':'الديون القائمة','weight':'الوزن المباع'}[k]!),trailing:Text(k=='weight'?`${s.data![k]!.toStringAsFixed(3)} كجم`:money(s.data![k]!))))),
-    FilledButton.icon(onPressed:exportPdf,icon:const Icon(Icons.picture_as_pdf),label:const Text('تصدير تقرير PDF'))
-  ]));
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, num>>(
+      future: DB.instance.totals(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) return Center(child: Text('خطأ: ${snapshot.error}'));
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final totals = snapshot.data!;
+        final labels = <String, String>{
+          'sales': 'إجمالي المبيعات',
+          'paid': 'مدفوع الفواتير',
+          'collections': 'التحصيلات',
+          'debt': 'الديون القائمة',
+          'weight': 'الوزن المباع',
+        };
+        return ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            ...labels.entries.map((entry) => Card(
+              child: ListTile(
+                title: Text(entry.value),
+                trailing: Text(entry.key == 'weight'
+                    ? '${totals[entry.key]!.toStringAsFixed(3)} كجم'
+                    : money(totals[entry.key]!)),
+              ),
+            )),
+            FilledButton.icon(
+              onPressed: exportPdf,
+              icon: const Icon(Icons.picture_as_pdf),
+              label: const Text('تصدير تقرير PDF'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 class SettingsPage extends StatefulWidget{const SettingsPage({super.key});@override State<SettingsPage> createState()=>_SettingsPageState();}
 class _SettingsPageState extends State<SettingsPage>{
