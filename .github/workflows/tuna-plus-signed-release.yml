@@ -135,6 +135,23 @@ jobs:
           PY
           grep -q 'key.properties' android/app/build.gradle 2>/dev/null || grep -q 'key.properties' android/app/build.gradle.kts
           grep -q 'tuna-plus-release.jks' android/key.properties
+      - name: Verify signing credentials before expensive build
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          KEYSTORE=android/app/tuna-plus-release.jks
+          test -s "$KEYSTORE"
+          echo "Checking keystore password and alias..."
+          keytool -list -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          echo "Checking private-key password..."
+          TEMP_KEYSTORE="$(mktemp)"
+          cp "$KEYSTORE" "$TEMP_KEYSTORE"
+          trap 'rm -f "$TEMP_KEYSTORE"' EXIT
+          keytool -keypasswd -alias "$KEY_ALIAS" -keystore "$TEMP_KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" -new "Temporary-Validation-Only-9274" >/dev/null
+          echo "Signing credentials verified successfully."
       - name: Add contacts permission
         run: |
           python3 - <<'PY'
