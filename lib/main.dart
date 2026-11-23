@@ -7,7 +7,6 @@ import 'package:path/path.dart' as p;
 import 'package:pdf/pdf.dart' as pdf;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 
 const gold = Color(0xFFD7AF59);
