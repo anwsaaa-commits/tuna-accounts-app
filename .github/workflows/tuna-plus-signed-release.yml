@@ -95,12 +95,9 @@ jobs:
               p = kotlin
               s = p.read_text()
               if "keystoreProperties" not in s:
-                  s = s.replace("android {", """import java.util.Properties
-          import java.io.FileInputStream
-
-          val keystoreProperties = Properties()
+                  s = s.replace("android {", """val keystoreProperties = java.util.Properties()
           val keystorePropertiesFile = rootProject.file("key.properties")
-          keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))
 
           android {""", 1)
               cfg = find_block(s, "signingConfigs {")
