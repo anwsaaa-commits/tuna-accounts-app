@@ -110,22 +110,41 @@ class DB {
     return db.insert('collections', {'customer_id':customerId,'amount':amount,'note':note,'created':DateTime.now().toIso8601String()});
   }
   Future<Map<String,num>> totals() async {
-    final db = await database;
-    final s = (await db.rawQuery('SELECT COALESCE(SUM(total),0) total,COALESCE(SUM(paid),0) paid,COALESCE(SUM(kg),0) weight FROM sales')).first;
-    final c = (await db.rawQuery('SELECT COALESCE(SUM(amount),0) total FROM collections')).first['total'] as num;
-    final due = (await db.rawQuery('SELECT COALESCE(SUM(total-paid),0) total FROM sales')).first['total'] as num;
-    final purchases = (await db.rawQuery('SELECT COALESCE(SUM(total_cost),0) cost,COALESCE(SUM(net_kg),0) net FROM private_batches')).first;
-    final expenseTotal = (await db.rawQuery('SELECT COALESCE(SUM(amount),0) amount FROM expenses')).first['amount'] as num;
-    final soldKg = s['weight'] as num;
-    final stockNetKg = purchases['net'] as num;
-    final costPerNetKg = stockNetKg > 0 ? (purchases['cost'] as num) / stockNetKg : 0;
-    final remainingKg = stockNetKg - soldKg;
-    final costOfSold = soldKg * costPerNetKg;
-    final inventoryCost = (remainingKg > 0 ? remainingKg : 0) * costPerNetKg;
-    final expensesAllocated = stockNetKg > 0 ? expenseTotal * (soldKg / stockNetKg).clamp(0,1) : expenseTotal;
-    final netProfit = (s['total'] as num) - costOfSold - expensesAllocated;
-    final finalProfit = stockNetKg > 0 && remainingKg <= 0.0001;
-    return {'sales':s['total'] as num,'paid':s['paid'] as num,'weight':soldKg,'collections':c,'debt':due-c,'purchaseCost':purchases['cost'] as num,'costPerKg':costPerNetKg,'costOfSold':costOfSold,'inventoryCost':inventoryCost,'stockNetKg':stockNetKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':expensesAllocated,'netProfit':netProfit,'profitFinal':finalProfit ? 1 : 0};
+    final db=await database;
+    final s=(await db.rawQuery('SELECT COALESCE(SUM(total),0) total,COALESCE(SUM(paid),0) paid,COALESCE(SUM(kg),0) weight FROM sales')).first;
+    final c=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) total FROM collections')).first['total'] as num;
+    final due=(await db.rawQuery('SELECT COALESCE(SUM(total-paid),0) total FROM sales')).first['total'] as num;
+    final batches=await db.query('private_batches',orderBy:'created ASC,id ASC');
+    final sales=await db.query('sales',orderBy:'created ASC,id ASC');
+    final expenseTotal=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) amount FROM expenses')).first['amount'] as num;
+    final stockNetKg=batches.fold<num>(0,(sum,b)=>sum+(b['net_kg'] as num));
+    final purchaseCost=batches.fold<num>(0,(sum,b)=>sum+(b['total_cost'] as num));
+    final soldKg=s['weight'] as num;
+    var remainingByBatch=batches.map((b)=>(b['net_kg'] as num).toDouble()).toList();
+    var costOfSold=0.0,inventoryCost=0.0;
+    final unitCosts=batches.map((b){
+      final net=(b['net_kg'] as num).toDouble();
+      return net>0?(b['total_cost'] as num).toDouble()/net:0.0;
+    }).toList();
+    for(final sale in sales){
+      var qty=(sale['kg'] as num).toDouble();
+      for(int i=0;i<remainingByBatch.length&&qty>0.000001;i++){
+        final take=qty<remainingByBatch[i]?qty:remainingByBatch[i];
+        if(take<=0)continue;
+        costOfSold+=take*unitCosts[i];
+        remainingByBatch[i]-=take;
+        qty-=take;
+      }
+    }
+    for(int i=0;i<remainingByBatch.length;i++){
+      inventoryCost+=remainingByBatch[i]>0?remainingByBatch[i]*unitCosts[i]:0;
+    }
+    final remainingKg=remainingByBatch.fold<double>(0,(sum,v)=>sum+(v>0?v:0));
+    final costPerNetKg=stockNetKg>0?purchaseCost/stockNetKg:0.0;
+    final expensesAllocated=stockNetKg>0?expenseTotal*(soldKg/stockNetKg).clamp(0,1):0.0;
+    final netProfit=(s['total'] as num)-costOfSold-expensesAllocated;
+    final finalProfit=stockNetKg>0&&remainingKg<=0.0001;
+    return {'sales':s['total'] as num,'paid':s['paid'] as num,'weight':soldKg,'collections':c,'debt':due-c,'purchaseCost':purchaseCost,'costPerKg':costPerNetKg,'costOfSold':costOfSold,'inventoryCost':inventoryCost,'stockNetKg':stockNetKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':expensesAllocated,'netProfit':netProfit,'profitFinal':finalProfit?1:0};
   }
   Future<List<Map<String,Object?>>> reservations() async => (await database).query('reservations',orderBy:'created DESC');
   Future<int> addReservation(String name,String phone,double kg,int price,int deposit,String note) async {
@@ -375,11 +394,11 @@ Future<void> newCustomer(BuildContext context) async {
 
 Future<void> newSale(BuildContext context) async {
   final clients=await DB.instance.customers();if(!context.mounted)return;
-  int? customerId=clients.isEmpty?null:clients.first['id'] as int;
+  int? customerId; // Cash sales are not assigned to a customer by default.
   final kgCtrl=TextEditingController(),priceCtrl=TextEditingController(text:await DB.instance.setting('price','6500')),paidCtrl=TextEditingController(),noteCtrl=TextEditingController();
   String type='نقدي';
   await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('بيع تونة'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-    DropdownButtonFormField<int>(initialValue:customerId,decoration:const InputDecoration(labelText:'العميل (اختياري)'),items:clients.map((c)=>DropdownMenuItem<int>(value:c['id'] as int,child:Text(c['name'] as String))).toList(),onChanged:(v)=>setDialog(()=>customerId=v)),
+    DropdownButtonFormField<int>(initialValue:customerId,decoration:const InputDecoration(labelText:'العميل (اختياري — اتركه فارغًا للبيع النقدي)'),items:[const DropdownMenuItem<int>(value:null,child:Text('بيع نقدي بدون تسجيل عميل')), ...clients.map((c)=>DropdownMenuItem<int>(value:c['id'] as int,child:Text(c['name'] as String)))],onChanged:(v)=>setDialog(()=>customerId=v)),
     TextField(controller:kgCtrl,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن بالكيلو')),
     TextField(controller:priceCtrl,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو')),
     TextField(controller:paidCtrl,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'المدفوع')),
