@@ -24,33 +24,29 @@ jobs:
           sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$FILE"
           sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' "$FILE"
           grep -Eq 'compileSdk(Version)?[[:space:]]*(=[[:space:]]*)?36' "$FILE"
-          # Force Android library plugins (including Flutter plugins) to compile with API 36.
-          if [ -f android/build.gradle ]; then
-            cat >> android/build.gradle <<'GRADLE'
-          
-          subprojects {
-              afterEvaluate { project ->
-                  if (project.hasProperty('android')) {
-                      project.android {
-                          compileSdkVersion 36
-                      }
-                  }
-              }
-          }
-          GRADLE
-          elif [ -f android/build.gradle.kts ]; then
+          # Configure Android library projects when their plugin is applied (avoid afterEvaluate).
+          if [ -f android/build.gradle.kts ]; then
             cat >> android/build.gradle.kts <<'KOTLIN'
-          
+
           subprojects {
-              afterEvaluate {
+              plugins.withId("com.android.library") {
                   extensions.findByName("android")?.let { androidExt ->
                       androidExt.javaClass.methods
-                          .firstOrNull { it.name == "compileSdkVersion" && it.parameterCount == 1 }
+                          .firstOrNull { it.name == "setCompileSdk" && it.parameterCount == 1 }
                           ?.invoke(androidExt, 36)
                   }
               }
           }
           KOTLIN
+          elif [ -f android/build.gradle ]; then
+            cat >> android/build.gradle <<'GRADLE'
+
+          subprojects {
+              plugins.withId("com.android.library") {
+                  android { compileSdkVersion 36 }
+              }
+          }
+          GRADLE
           fi
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
