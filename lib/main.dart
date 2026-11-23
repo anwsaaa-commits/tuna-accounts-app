@@ -162,6 +162,45 @@ class DB {
     if (!grossKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || !netKg.isFinite || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
     return (await database).insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':DateTime.now().toIso8601String(),'note':note.trim()});
   }
+  // FIFO batch statement: calculates allocation of historical sales without modifying saved data.
+  Future<Map<String,Object?>> privateBatchStatement(int batchId) async {
+    final db=await database;
+    final batches=await db.query('private_batches',orderBy:'created ASC,id ASC');
+    final sales=await db.query('sales',orderBy:'created ASC,id ASC');
+    final expenseRows=await db.query('expenses');
+    final batchIndex=batches.indexWhere((b)=>(b['id'] as int)==batchId);
+    if(batchIndex<0) throw Exception('عملية الشراء غير موجودة');
+    final batch=batches[batchIndex];
+    final netKg=(batch['net_kg'] as num).toDouble();
+    final totalCost=(batch['total_cost'] as num).toDouble();
+    final unitCost=netKg>0?totalCost/netKg:0.0;
+    final remainingByBatch=batches.map((b)=>(b['net_kg'] as num).toDouble()).toList();
+    double soldKg=0,revenue=0;
+    final allocatedSales=<Map<String,Object?>>[];
+    for(final sale in sales){
+      double saleRemaining=(sale['kg'] as num).toDouble();
+      final saleKg=(sale['kg'] as num).toDouble();
+      final saleTotal=(sale['total'] as num).toDouble();
+      for(int bi=0;bi<remainingByBatch.length && saleRemaining>0.000001;bi++){
+        final take=saleRemaining<remainingByBatch[bi]?saleRemaining:remainingByBatch[bi];
+        if(take<=0)continue;
+        if(bi==batchIndex){
+          soldKg+=take;
+          final allocatedRevenue=saleKg>0?saleTotal*(take/saleKg):0.0;
+          revenue+=allocatedRevenue;
+          allocatedSales.add({'invoice':sale['invoice'],'created':sale['created'],'kg':take,'revenue':allocatedRevenue,'unitPrice':sale['price']});
+        }
+        remainingByBatch[bi]-=take;
+        saleRemaining-=take;
+      }
+    }
+    final totalSold=sales.fold<num>(0,(sum,s)=>sum+(s['kg'] as num));
+    final expenses=expenseRows.fold<num>(0,(sum,e)=>sum+(e['amount'] as num));
+    final expenseShare=totalSold>0?expenses*(soldKg/totalSold):0.0;
+    final costOfSold=soldKg*unitCost;
+    final remainingKg=netKg-soldKg;
+    return {'batch':batch,'netKg':netKg,'cost':totalCost,'unitCost':unitCost,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseShare,'profit':revenue-costOfSold-expenseShare,'expenseTotal':expenses,'allocations':allocatedSales};
+  }
   Future<void> updatePrivateBatch(int id,double grossKg,int purchasePrice,double netKg,String note) async {
     if(!grossKg.isFinite || grossKg<=0 || purchasePrice<=0 || !netKg.isFinite || netKg<=0 || netKg>grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
     final db=await database;
@@ -688,6 +727,43 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       const SizedBox(height:8),const Text('المصروفات خاصة ولا تظهر في فواتير العملاء أو كشوفهم.')
     ]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addExpense(int.parse(amount.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ المصروف'))]));
   }
+  Future<void> showBatchStatement(Map<String,Object?> purchase) async {
+    try {
+      final report=await DB.instance.privateBatchStatement(purchase['id'] as int);
+      if(!mounted)return;
+      final batch=report['batch'] as Map<String,Object?>;
+      final allocations=report['allocations'] as List<Map<String,Object?>>;
+      await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
+        title:const Text('كشف شراء مستقل'),
+        content:SizedBox(width:double.maxFinite,height:MediaQuery.of(ctx).size.height*0.68,child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+          Text('تاريخ الشراء: ${dateLabel(batch['created'] as String)}'),
+          if((batch['note'] as String? ?? '').isNotEmpty)Text('ملاحظة: ${batch['note']}'),
+          const Divider(),
+          Text('الوزن الإجمالي: ${(batch['gross_kg'] as num).toStringAsFixed(2)} كجم'),
+          Text('الوزن الصافي: ${(report['netKg'] as num).toStringAsFixed(2)} كجم'),
+          Text('تكلفة الشراء: ${money(report['cost'] as num)}'),
+          Text('تكلفة الكيلو الصافي: ${money(report['unitCost'] as num)}'),
+          const Divider(),
+          Text('الوزن المباع من هذه الشحنة: ${(report['soldKg'] as num).toStringAsFixed(3)} كجم'),
+          Text('المتبقي: ${(report['remainingKg'] as num).toStringAsFixed(3)} كجم'),
+          Text('إيرادات المبيعات الموزعة: ${money(report['revenue'] as num)}'),
+          Text('تكلفة وزن المباع: ${money(report['costOfSold'] as num)}'),
+          Text('حصة المصروفات العامة: ${money(report['expenseShare'] as num)}'),
+          Text('الربح الصافي التقريبي: ${money(report['profit'] as num)}',style:const TextStyle(color:gold,fontWeight:FontWeight.bold)),
+          const SizedBox(height:10),
+          const Text('تفصيل المبيعات الموزعة على الشحنة',style:TextStyle(fontWeight:FontWeight.bold)),
+          if(allocations.isEmpty)const Text('لم تُوزع مبيعات على هذه الشحنة بعد.'),
+          ...allocations.map((s)=>Card(child:ListTile(
+            dense:true,title:Text('${s['invoice']??'فاتورة'} • ${(s['kg'] as num).toStringAsFixed(3)} كجم'),
+            subtitle:Text('${dateLabel(s['created'] as String)}\nالإيراد: ${money(s['revenue'] as num)}'),
+            isThreeLine:true,
+          ))),
+          const Text('التوزيع حسابي بطريقة FIFO (الأقدم شراءً أولاً). المصروفات العامة موزعة بنسبة وزن هذه الشحنة من إجمالي الوزن المباع. قد تشمل مبيعات سابقة غير مرتبطة بشحنة محفوظة.',style:TextStyle(fontSize:12)),
+        ]))),
+        actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إغلاق'))],
+      ));
+    }catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}
+  }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('حسابات الشراء والمصروفات الخاصة')),body:FutureBuilder<List<Map<String,Object?>>>(future:entries,builder:(context,s){
     if(s.hasError)return Center(child:Text('خطأ: ${s.error}'));
     if(!s.hasData)return const Center(child:CircularProgressIndicator());
@@ -720,7 +796,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       }),
       const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
       if(rows.isEmpty)const Padding(padding:EdgeInsets.all(18),child:Text('لم تسجل مشتريات بعد',textAlign:TextAlign.center)),
-      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;return Card(child:ListTile(title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • الإجمالي: ${money(tc)}'),isThreeLine:true,trailing:PopupMenuButton<String>(onSelected:(action)async{if(action=='edit'){await editEntry(r);}else if(action=='delete'){try{await DB.instance.deletePrivateBatch(r['id'] as int);if(mounted)setState(reloadEntries);}catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}}},itemBuilder:(_)=>const [PopupMenuItem(value:'edit',child:Text('تعديل عملية الشراء')),PopupMenuItem(value:'delete',child:Text('حذف عملية الشراء'))],child:const Icon(Icons.more_vert))));})
+      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;return Card(child:ListTile(title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • الإجمالي: ${money(tc)}'),isThreeLine:true,trailing:PopupMenuButton<String>(onSelected:(action)async{if(action=='statement'){await showBatchStatement(r);}else if(action=='edit'){await editEntry(r);}else if(action=='delete'){try{await DB.instance.deletePrivateBatch(r['id'] as int);if(mounted)setState(reloadEntries);}catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}}},itemBuilder:(_)=>const [PopupMenuItem(value:'statement',child:Text('كشف الشحنة والربح')),PopupMenuItem(value:'edit',child:Text('تعديل عملية الشراء')),PopupMenuItem(value:'delete',child:Text('حذف عملية الشراء'))],child:const Icon(Icons.more_vert))));})
     ]);
   }));
 }
