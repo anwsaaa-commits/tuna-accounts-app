@@ -257,11 +257,20 @@ class _DashboardState extends State<Dashboard> {
 Future<void> newCustomer(BuildContext context) async {
   final name=TextEditingController(),phone=TextEditingController(),note=TextEditingController();
   Future<void> chooseContact(BuildContext dialogContext,StateSetter setDialog) async {
+    // Keep the user informed while the native permission prompt or contact query is running.
+    bool loadingDialogOpen=false;
     try {
       final allowed=await FlutterContacts.requestPermission();
-      if(!allowed){if(dialogContext.mounted)showMessage(dialogContext,'يرجى السماح بالوصول إلى جهات الاتصال');return;}
-      final contacts=await FlutterContacts.getContacts(withProperties:true);
+      if(!allowed){if(dialogContext.mounted)showMessage(dialogContext,'لم يتم منح إذن جهات الاتصال');return;}
       if(!dialogContext.mounted)return;
+      loadingDialogOpen=true;
+      showDialog<void>(context:dialogContext,barrierDismissible:false,builder:(loadingContext)=>const AlertDialog(
+        content:Row(mainAxisSize:MainAxisSize.min,children:[CircularProgressIndicator(),SizedBox(width:16),Flexible(child:Text('جارٍ تحميل جهات الاتصال...'))]),
+      ));
+      final contacts=await FlutterContacts.getContacts(withProperties:true);
+      if(dialogContext.mounted&&loadingDialogOpen){Navigator.of(dialogContext,rootNavigator:true).pop();loadingDialogOpen=false;}
+      if(!dialogContext.mounted)return;
+      contacts.sort((a,b)=>a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
       final searchController=TextEditingController();
       final selected=await showDialog<Contact>(
         context:dialogContext,
@@ -273,7 +282,7 @@ Future<void> newCustomer(BuildContext context) async {
           }).toList();
           return AlertDialog(
             title:const Text('اختر من جهات الاتصال'),
-            content:SizedBox(width:double.maxFinite,height:440,child:Column(children:[
+            content:SizedBox(width:double.maxFinite,height:MediaQuery.of(pickContext).size.height*0.65,child:Column(children:[
               TextField(controller:searchController,decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'بحث بالاسم أو رقم الهاتف'),onChanged:(_)=>refreshPicker((){})),
               const SizedBox(height:6),
               Expanded(child:filtered.isEmpty?const Center(child:Text('لا توجد نتائج')):ListView.builder(
@@ -281,7 +290,7 @@ Future<void> newCustomer(BuildContext context) async {
                 itemBuilder:(context,index){
                   final contact=filtered[index];
                   final displayPhone=contact.phones.isEmpty?'':contact.phones.first.number;
-                  return ListTile(leading:const Icon(Icons.person,color:gold),title:Text(contact.displayName),subtitle:Text(displayPhone.isEmpty?'لا يوجد رقم هاتف':displayPhone),onTap:()=>Navigator.pop(pickContext,contact));
+                  return ListTile(leading:const Icon(Icons.person,color:gold),title:Text(contact.displayName.isEmpty?'بدون اسم':contact.displayName),subtitle:Text(displayPhone.isEmpty?'لا يوجد رقم هاتف':displayPhone),onTap:()=>Navigator.pop(pickContext,contact));
                 })),
             ])),
             actions:[TextButton(onPressed:()=>Navigator.pop(pickContext),child:const Text('إغلاق'))],
@@ -298,7 +307,7 @@ Future<void> newCustomer(BuildContext context) async {
               context:dialogContext,
               builder:(phoneContext)=>AlertDialog(
                 title:const Text('اختر رقم الهاتف'),
-                content:Column(mainAxisSize:MainAxisSize.min,children:selected.phones.map((p)=>ListTile(title:Text(p.number),subtitle:Text(p.label.name),onTap:()=>Navigator.pop(phoneContext,p.number))).toList()),
+                content:SizedBox(height:MediaQuery.of(phoneContext).size.height*0.45,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:selected.phones.map((p)=>ListTile(title:Text(p.number),subtitle:Text(p.label.name),onTap:()=>Navigator.pop(phoneContext,p.number))).toList()))),
                 actions:[TextButton(onPressed:()=>Navigator.pop(phoneContext),child:const Text('إلغاء'))],
               ),
             );
@@ -306,14 +315,17 @@ Future<void> newCustomer(BuildContext context) async {
           if(chosen!=null)setDialog(()=>phone.text=chosen!);
         }
       }
-    } catch(e){if(dialogContext.mounted)showMessage(dialogContext,'تعذر قراءة جهات الاتصال: $e');}
+    } catch(e){
+      if(dialogContext.mounted&&loadingDialogOpen){Navigator.of(dialogContext,rootNavigator:true).pop();loadingDialogOpen=false;}
+      if(dialogContext.mounted)showMessage(dialogContext,'تعذر فتح جهات الاتصال: $e');
+    }
   }
-  await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('إضافة عميل'),content:Column(mainAxisSize:MainAxisSize.min,children:[
-    OutlinedButton.icon(onPressed:()=>chooseContact(ctx,setDialog),icon:const Icon(Icons.contacts),label:const Text('اختيار من جهات الاتصال')),
+  await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('إضافة عميل'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+    SizedBox(width:double.maxFinite,child:OutlinedButton.icon(onPressed:()=>chooseContact(ctx,setDialog),icon:const Icon(Icons.contacts),label:const Text('اختيار من جهات الاتصال'))),
     TextField(controller:name,decoration:const InputDecoration(labelText:'اسم العميل')),
-    TextField(controller:phone,decoration:const InputDecoration(labelText:'الهاتف')),
+    TextField(controller:phone,decoration:const InputDecoration(labelText:'الهاتف'),keyboardType:TextInputType.phone),
     TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظات')),
-  ]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addCustomer(name.text,phone.text,note.text);if(ctx.mounted)Navigator.pop(ctx);}catch(e){showMessage(ctx,e.toString());}},child:const Text('حفظ'))])));
+  ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addCustomer(name.text,phone.text,note.text);if(ctx.mounted)Navigator.pop(ctx);}catch(e){showMessage(ctx,e.toString());}},child:const Text('حفظ'))])));
 }
 
 Future<void> newSale(BuildContext context) async {
