@@ -262,32 +262,49 @@ Future<void> newCustomer(BuildContext context) async {
       final contacts=await FlutterContacts.getContacts(withProperties:true);
       if(!dialogContext.mounted)return;
       final searchController=TextEditingController();
-      final selected=await showDialog<Contact>(context:dialogContext,builder:(pickContext)=>StatefulBuilder(builder:(pickContext,refreshPicker){
-        final query=searchController.text.trim().toLowerCase();
-        final filtered=contacts.where((contact){
-          final number=contact.phones.map((p)=>p.number).join(' ');
-          return contact.displayName.toLowerCase().contains(query)||number.toLowerCase().contains(query);
-        }).toList();
-        return AlertDialog(title:const Text('اختر من جهات الاتصال'),
-          content:SizedBox(width:double.maxFinite,height:440,child:Column(children:[
-            TextField(controller:searchController,decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'بحث بالاسم أو رقم الهاتف'),onChanged:(_)=>refreshPicker((){})),
-            const SizedBox(height:6),
-            Expanded(child:filtered.isEmpty?const Center(child:Text('لا توجد نتائج')):ListView.builder(
-              itemCount:filtered.length,itemBuilder:(context,index){final contact=filtered[index];final number=contact.phones.isEmpty?'':contact.phones.first.number;return ListTile(
-                leading:const Icon(Icons.person,color:gold),title:Text(contact.displayName),subtitle:Text(number.isEmpty?'لا يوجد رقم هاتف':number),
-                onTap:()=>Navigator.pop(pickContext,contact));}))
-          ])),actions:[TextButton(onPressed:()=>Navigator.pop(pickContext),child:const Text('إغلاق'))];
-      }));
+      final selected=await showDialog<Contact>(
+        context:dialogContext,
+        builder:(pickContext)=>StatefulBuilder(builder:(pickContext,refreshPicker){
+          final query=searchController.text.trim().toLowerCase();
+          final filtered=contacts.where((contact){
+            final numbers=contact.phones.map((p)=>p.number).join(' ');
+            return contact.displayName.toLowerCase().contains(query)||numbers.toLowerCase().contains(query);
+          }).toList();
+          return AlertDialog(
+            title:const Text('اختر من جهات الاتصال'),
+            content:SizedBox(width:double.maxFinite,height:440,child:Column(children:[
+              TextField(controller:searchController,decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'بحث بالاسم أو رقم الهاتف'),onChanged:(_)=>refreshPicker((){})),
+              const SizedBox(height:6),
+              Expanded(child:filtered.isEmpty?const Center(child:Text('لا توجد نتائج')):ListView.builder(
+                itemCount:filtered.length,
+                itemBuilder:(context,index){
+                  final contact=filtered[index];
+                  final displayPhone=contact.phones.isEmpty?'':contact.phones.first.number;
+                  return ListTile(leading:const Icon(Icons.person,color:gold),title:Text(contact.displayName),subtitle:Text(displayPhone.isEmpty?'لا يوجد رقم هاتف':displayPhone),onTap:()=>Navigator.pop(pickContext,contact));
+                })),
+            ])),
+            actions:[TextButton(onPressed:()=>Navigator.pop(pickContext),child:const Text('إغلاق'))],
+          );
+        }),
+      );
       searchController.dispose();
       if(selected!=null){
         setDialog(()=>name.text=selected.displayName);
         if(selected.phones.isNotEmpty){
           String? chosen=selected.phones.first.number;
           if(selected.phones.length>1 && dialogContext.mounted){
-            chosen=await showDialog<String>(context:dialogContext,builder:(phoneContext)=>AlertDialog(title:const Text('اختر رقم الهاتف'),content:Column(mainAxisSize:MainAxisSize.min,children:selected.phones.map((p)=>ListTile(title:Text(p.number),subtitle:Text(p.label),onTap:()=>Navigator.pop(phoneContext,p.number))).toList()),actions:[TextButton(onPressed:()=>Navigator.pop(phoneContext),child:const Text('إلغاء'))]);
+            chosen=await showDialog<String>(
+              context:dialogContext,
+              builder:(phoneContext)=>AlertDialog(
+                title:const Text('اختر رقم الهاتف'),
+                content:Column(mainAxisSize:MainAxisSize.min,children:selected.phones.map((p)=>ListTile(title:Text(p.number),subtitle:Text(p.label),onTap:()=>Navigator.pop(phoneContext,p.number))).toList()),
+                actions:[TextButton(onPressed:()=>Navigator.pop(phoneContext),child:const Text('إلغاء'))],
+              ),
+            );
           }
-          if(chosen!=null)setDialog(()=>phone.text=chosen!);
-        }}
+          if(chosen!=null)setDialog(()=>phone.text=chosen);
+        }
+      }
     } catch(e){if(dialogContext.mounted)showMessage(dialogContext,'تعذر قراءة جهات الاتصال: $e');}
   }
   await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('إضافة عميل'),content:Column(mainAxisSize:MainAxisSize.min,children:[
@@ -548,7 +565,7 @@ class ReportsPage extends StatelessWidget{
     final normal=pw.TextStyle(font:arabicFont,fontSize:10);
     final bold=pw.TextStyle(font:arabicBold,fontSize:14);
     final heading=pw.TextStyle(font:arabicBold,fontSize:20,color:pdf.PdfColor.fromHex('#B78B34'));
-    final number=(num? v)=>NumberFormat('#,##0.##','en').format(v??0);
+    final number=(num? value)=>NumberFormat('#,##0.##','en').format(value??0);
     doc.addPage(pw.MultiPage(pageFormat:pdf.PdfPageFormat.a4,margin:const pw.EdgeInsets.all(28),header:(ctx)=>pw.Container(alignment:pw.Alignment.centerRight,padding:const pw.EdgeInsets.only(bottom:8),child:pw.Text('تونة بلس • تقرير الحسابات',style:heading)),footer:(ctx)=>pw.Container(alignment:pw.Alignment.center,padding:const pw.EdgeInsets.only(top:8),child:pw.Text('صفحة ${ctx.pageNumber} من ${ctx.pagesCount}',style:normal)),build:(ctx)=>[
       pw.Directionality(textDirection:pw.TextDirection.rtl,child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
         pw.Container(padding:const pw.EdgeInsets.all(12),decoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#F4E8CF'),borderRadius:pw.BorderRadius.circular(8)),child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
