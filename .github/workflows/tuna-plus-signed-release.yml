@@ -104,6 +104,8 @@ jobs:
               s = s.replace("<application", permission + "    <application", 1)
           p.write_text(s)
           PY
+      - name: Verify contacts permission
+        run: grep -q 'android.permission.READ_CONTACTS' android/app/src/main/AndroidManifest.xml
       - name: Set app compile SDK 36
         run: |
           FILE=android/app/build.gradle
@@ -127,7 +129,7 @@ jobs:
           "$APKSIGNER" verify --print-certs "$APK" | tee signing-certificate.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: tuna-plus-1.1.0-signed-release-apk
+          name: tuna-plus-1.1.1-signed-release-apk
           path: |
             build/app/outputs/flutter-apk/app-release.apk
             signing-certificate.txt
