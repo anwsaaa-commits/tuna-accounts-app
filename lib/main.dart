@@ -348,28 +348,36 @@ class _InvoicePreviewState extends State<InvoicePreview>{
     final bank=await DB.instance.setting('bank','254127488');
     final owner=await DB.instance.setting('owner','محمد صالح بن صالح علي الخلاقي');
     final address=await DB.instance.setting('address','فوه المتضررين بجانب مسجد هائل خلف البريد');
-    final sale=widget.sale;final total=(sale['total'] as num);final paid=(sale['paid'] as num);final due=total-paid;
+    final sale=widget.sale;final total=sale['total'] as num;final paid=sale['paid'] as num;final due=total-paid;
+    final arabicFont=await PdfGoogleFonts.amiriRegular();
+    final arabicBold=await PdfGoogleFonts.amiriBold();
+    final normal=pw.TextStyle(font:arabicFont,fontSize:11);
+    final bold=pw.TextStyle(font:arabicBold,fontSize:14);
     final doc=pw.Document();
-    doc.addPage(pw.Page(pageFormat:pdf.PdfPageFormat.a4,build:(_)=>pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
+    doc.addPage(pw.Page(pageFormat:pdf.PdfPageFormat.a4,build:(_)=>pw.Directionality(textDirection:pw.TextDirection.rtl,child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
       pw.Container(padding:const pw.EdgeInsets.all(16),decoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#161616')),child:pw.Column(children:[
-        pw.Text(shop,style:pw.TextStyle(color:pdf.PdfColor.fromHex('#D7AF59'),fontSize:26,fontWeight:pw.FontWeight.bold)),
-        pw.Text('TUNA PLUS • SALES INVOICE',style:pw.TextStyle(color:pdf.PdfColor.fromHex('#D7AF59'),fontSize:12))
+        pw.Text(shop,style:pw.TextStyle(font:arabicBold,color:pdf.PdfColor.fromHex('#D7AF59'),fontSize:24)),
+        pw.Text('فاتورة مبيعات • تونة بلس',style:pw.TextStyle(font:arabicFont,color:pdf.PdfColor.fromHex('#D7AF59'),fontSize:12))
       ])),
       pw.SizedBox(height:18),
-      pw.Text('Invoice: ${sale['invoice']}',style:pw.TextStyle(fontSize:14,fontWeight:pw.FontWeight.bold)),
-      pw.Text('Date: ${(sale['created'] as String).substring(0,16).replaceFirst('T',' ')}'),
-      pw.Text('Customer: ${client?['name']??'Walk-in customer'}'),
+      pw.Text('رقم الفاتورة: ${sale['invoice']}',style:bold,textAlign:pw.TextAlign.right),
+      pw.Text('التاريخ: ${(sale['created'] as String).substring(0,16).replaceFirst('T',' ')}',style:normal,textAlign:pw.TextAlign.right),
+      pw.Text('العميل: ${client?['name']??'عميل نقدي'}',style:normal,textAlign:pw.TextAlign.right),
       pw.SizedBox(height:14),
-      pw.TableHelper.fromTextArray(data:[['Weight (kg)','Price / kg','Total'],[sale['kg'].toString(),sale['price'].toString(),total.toString()]]),
+      pw.TableHelper.fromTextArray(data:[['الوزن (كجم)','سعر الكيلو','الإجمالي'],[sale['kg'].toString(),money(sale['price'] as num),money(total)]],headerStyle:pw.TextStyle(font:arabicBold,fontSize:11),cellStyle:normal),
       pw.SizedBox(height:16),
-      pw.Text('TOTAL: ${money(total)}',style:pw.TextStyle(fontSize:18,fontWeight:pw.FontWeight.bold)),
-      pw.Text('Paid: ${money(paid)}'),pw.Text('Balance: ${money(due)}'),
-      if((sale['note'] as String? ?? '').isNotEmpty)pw.Padding(padding:const pw.EdgeInsets.only(top:10),child:pw.Text('Notes: ${sale['note']}')),
+      pw.Text('الإجمالي: ${money(total)}',style:bold,textAlign:pw.TextAlign.right),
+      pw.Text('المدفوع: ${money(paid)}',style:normal,textAlign:pw.TextAlign.right),
+      pw.Text('المتبقي: ${money(due)}',style:bold,textAlign:pw.TextAlign.right),
+      if((sale['note'] as String? ?? '').isNotEmpty)pw.Padding(padding:const pw.EdgeInsets.only(top:10),child:pw.Text('ملاحظات: ${sale['note']}',style:normal,textAlign:pw.TextAlign.right)),
       pw.SizedBox(height:22),pw.Divider(),
-      pw.Text('Bank details',style:pw.TextStyle(fontSize:14,fontWeight:pw.FontWeight.bold)),
-      pw.Text('Bank Al-Ameeqi: $bank'),pw.Text(owner),pw.Text('Phone: $phone'),pw.Text('Address: $address'),
-      pw.SizedBox(height:18),pw.Center(child:pw.Text('Thank you for your business • Tuna Plus'))
-    ])));
+      pw.Text('بيانات التحويل البنكي',style:bold,textAlign:pw.TextAlign.right),
+      pw.Text('بنك العميقي: $bank',style:normal,textAlign:pw.TextAlign.right),
+      pw.Text(owner,style:normal,textAlign:pw.TextAlign.right),
+      pw.Text('رقم الهاتف: $phone',style:normal,textAlign:pw.TextAlign.right),
+      pw.Text('العنوان: $address',style:normal,textAlign:pw.TextAlign.right),
+      pw.SizedBox(height:18),pw.Center(child:pw.Text('شكراً لثقتكم • تونة بلس',style:bold))
+    ]))));
     await Printing.layoutPdf(onLayout:(_)=>doc.save());
   }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('فاتورة العميل')),body:FutureBuilder<void>(future:loaded,builder:(context,s)=>ListView(padding:const EdgeInsets.all(16),children:[
