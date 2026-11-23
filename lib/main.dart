@@ -274,8 +274,8 @@ class _InvoicePreviewState extends State<InvoicePreview>{
     final doc=pw.Document();
     doc.addPage(pw.Page(pageFormat:pdf.PdfPageFormat.a4,build:(_)=>pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
       pw.Container(padding:const pw.EdgeInsets.all(16),decoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#161616')),child:pw.Column(children:[
-        pw.Text(shop,style:pw.TextStyle(color:pw.PdfColor.fromHex('#D7AF59'),fontSize:26,fontWeight:pw.FontWeight.bold)),
-        pw.Text('TUNA PLUS • SALES INVOICE',style:pw.TextStyle(color:pw.PdfColor.fromHex('#D7AF59'),fontSize:12))
+        pw.Text(shop,style:pw.TextStyle(color:pdf.PdfColor.fromHex('#D7AF59'),fontSize:26,fontWeight:pw.FontWeight.bold)),
+        pw.Text('TUNA PLUS • SALES INVOICE',style:pw.TextStyle(color:pdf.PdfColor.fromHex('#D7AF59'),fontSize:12))
       ])),
       pw.SizedBox(height:18),
       pw.Text('Invoice: ${sale['invoice']}',style:pw.TextStyle(fontSize:14,fontWeight:pw.FontWeight.bold)),
