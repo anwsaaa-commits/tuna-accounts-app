@@ -497,11 +497,22 @@ class ReportsPage extends StatelessWidget{
   const ReportsPage({super.key});
   Future<void> exportPdf()async{
     final t=await DB.instance.totals(),rows=await DB.instance.sales(),doc=pw.Document();
-    doc.addPage(pw.Page(build:(_)=>pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.start,children:[
-      pw.Text('Tuna Plus Sales Report',style:pw.TextStyle(fontSize:20,fontWeight:pw.FontWeight.bold)),
-      pw.SizedBox(height:10),pw.Text('Sales: ${money(t['sales']!)}'),pw.Text('Paid: ${money(t['paid']!)}'),pw.Text('Collections: ${money(t['collections']!)}'),pw.Text('Outstanding: ${money(t['debt']!)}'),pw.Text('Weight: ${t['weight']!.toStringAsFixed(3)} kg'),pw.SizedBox(height:12),
-      pw.TableHelper.fromTextArray(data:[['Invoice','Date','Weight','Total','Paid'],...rows.map((r)=>[r['invoice'],(r['created'] as String).substring(0,10),r['kg'],r['total'],r['paid']])])
-    ])));
+    final arabicFont=await PdfGoogleFonts.amiriRegular();
+    final arabicBold=await PdfGoogleFonts.amiriBold();
+    final normal=pw.TextStyle(font:arabicFont,fontSize:10);
+    final bold=pw.TextStyle(font:arabicBold,fontSize:14);
+    doc.addPage(pw.Page(build:(_)=>pw.Directionality(textDirection:pw.TextDirection.rtl,child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
+      pw.Text('تقرير مبيعات تونة بلس',style:bold,textAlign:pw.TextAlign.right),
+      pw.SizedBox(height:10),
+      pw.Text('إجمالي المبيعات: ${money(t['sales']!)}',style:normal),
+      pw.Text('المدفوع: ${money(t['paid']!)}',style:normal),
+      pw.Text('التحصيلات: ${money(t['collections']!)}',style:normal),
+      pw.Text('الرصيد المستحق: ${money(t['debt']!)}',style:normal),
+      pw.Text('الوزن المباع: ${t['weight']!.toStringAsFixed(3)} كجم',style:normal),
+      pw.Text('صافي الأرباح التقديري: ${money(t['netProfit']??0)}',style:bold),
+      pw.SizedBox(height:12),
+      pw.TableHelper.fromTextArray(data:[['رقم الفاتورة','التاريخ','الوزن','الإجمالي','المدفوع'],...rows.map((r)=>[r['invoice'],(r['created'] as String).substring(0,10),r['kg'],r['total'],r['paid']])],headerStyle:pw.TextStyle(font:arabicBold,fontSize:9),cellStyle:pw.TextStyle(font:arabicFont,fontSize:9))
+    ]))));
     await Printing.layoutPdf(onLayout:(_)=>doc.save());
   }
   @override
