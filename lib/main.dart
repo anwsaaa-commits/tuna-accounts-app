@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 
 const gold = Color(0xFFD7AF59);
 const dark = Color(0xFF101114);
@@ -238,9 +239,9 @@ class _InvoicePageState extends State<InvoicePage>{
 
 class InvoicePreview extends StatefulWidget{const InvoicePreview({super.key,required this.sale});final Map<String,Object?> sale;@override State<InvoicePreview> createState()=>_InvoicePreviewState();}
 class _InvoicePreviewState extends State<InvoicePreview>{
-  Map<String,Object?>? client;late Future<void> loaded;
+  Map<String,Object?>? client;Map<String,String> storeInfo={};late Future<void> loaded;
   @override void initState(){super.initState();loaded=load();}
-  Future<void> load()async{client=await DB.instance.customerById(widget.sale['customer_id'] as int?);if(mounted)setState((){});}
+  Future<void> load()async{client=await DB.instance.customerById(widget.sale['customer_id'] as int?);storeInfo={'shop':await DB.instance.setting('shop','تونة بلس'),'phone':await DB.instance.setting('phone','777521058'),'bank':await DB.instance.setting('bank','254127488'),'owner':await DB.instance.setting('owner','محمد صالح بن صالح علي الخلاقي'),'address':await DB.instance.setting('address','فوه المتضررين بجانب مسجد هائل خلف البريد')};if(mounted)setState((){});}
   String val(String key,String fallback)=>widget.sale[key]?.toString()??fallback;
   Future<void> printInvoice()async{
     final shop=await DB.instance.setting('shop','تونة بلس');
@@ -290,13 +291,14 @@ class _InvoicePreviewState extends State<InvoicePreview>{
       if((widget.sale['note'] as String? ?? '').isNotEmpty)...[const SizedBox(height:8),Text('ملاحظات: ${widget.sale['note']}')],
       const Divider(),
       const Text('بيانات التحويل البنكي',style:TextStyle(color:gold,fontWeight:FontWeight.bold)),
-      const Text('بنك العميقي: 254127488'),
-      const Text('محمد صالح بن صالح علي الخلاقي'),
-      const Text('جوال: 777521058'),
-      const Text('فوه المتضررين بجانب مسجد هائل خلف البريد'),
+      Text('بنك العميقي: ${storeInfo['bank']??'254127488'}'),
+      Text(storeInfo['owner']??'محمد صالح بن صالح علي الخلاقي'),
+      Text('جوال: ${storeInfo['phone']??'777521058'}'),
+      Text(storeInfo['address']??'فوه المتضررين بجانب مسجد هائل خلف البريد'),
       const SizedBox(height:12),const Center(child:Text('شكراً لثقتكم • تونة بلس',style:TextStyle(color:gold))),
     ]))),
     FilledButton.icon(onPressed:printInvoice,icon:const Icon(Icons.picture_as_pdf),label:const Text('طباعة / حفظ الفاتورة PDF')),
+    OutlinedButton.icon(onPressed:()=>Share.share('تونة بلس • فاتورة مبيعات\\nرقم: ${widget.sale['invoice']}\\nالعميل: ${client?['name']??'عميل نقدي'}\\nالوزن: ${widget.sale['kg']} كجم\\nسعر الكيلو: ${money(widget.sale['price'] as num)}\\nالإجمالي: ${money(widget.sale['total'] as num)}\\nالمدفوع: ${money(widget.sale['paid'] as num)}\\nالمتبقي: ${money((widget.sale['total'] as num)-(widget.sale['paid'] as num))}\\nالحساب البنكي: ${storeInfo['bank']??'254127488'}\\n${storeInfo['owner']??'محمد صالح بن صالح علي الخلاقي'}\\nجوال: ${storeInfo['phone']??'777521058'}\\nالعنوان: ${storeInfo['address']??'فوه المتضررين بجانب مسجد هائل خلف البريد'}'),icon:const Icon(Icons.share),label:const Text('مشاركة الفاتورة للعميل')),
   ])));
 }
 Widget _invoiceRow(String label,String value,{bool strong=false})=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[Text(label,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null),Flexible(child:Text(value,textAlign:TextAlign.end,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null))]));
