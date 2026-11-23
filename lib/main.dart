@@ -61,6 +61,9 @@ class DB {
         await db.execute('CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT)');
         await db.insert('settings', {'key':'shop','value':'تونة بلس'});
         await db.insert('settings', {'key':'price','value':'6500'});
+        await db.insert('settings', {'key':'bank','value':'254127488'});
+        await db.insert('settings', {'key':'owner','value':'محمد صالح بن صالح علي الخلاقي'});
+        await db.insert('settings', {'key':'address','value':'فوه المتضررين بجانب مسجد هائل خلف البريد'});
       });
     return _database!;
   }
@@ -104,6 +107,7 @@ class DB {
     return {'sales':total,'paid':paid+c,'debt':total-paid-c};
   }
   Future<List<Map<String,Object?>>> salesForCustomer(int id) async => (await database).query('sales', where:'customer_id=?', whereArgs:[id], orderBy:'created DESC');
+  Future<Map<String,Object?>?> customerById(int? id) async { if (id == null) return null; final rows = await (await database).query('customers', where:'id=?', whereArgs:[id], limit:1); return rows.isEmpty ? null : rows.first; }
   Future<List<Map<String,Object?>>> collectionsForCustomer(int id) async => (await database).query('collections', where:'customer_id=?', whereArgs:[id], orderBy:'created DESC');
   Future<String> setting(String key, String fallback) async {
     final result = await (await database).query('settings', where:'key=?', whereArgs:[key]);
@@ -214,12 +218,88 @@ Future<void> newSale(BuildContext context) async {
 class InvoicePage extends StatefulWidget{const InvoicePage({super.key});@override State<InvoicePage> createState()=>_InvoicePageState();}
 class _InvoicePageState extends State<InvoicePage>{
   late Future<List<Map<String,Object?>>> future;@override void initState(){super.initState();future=DB.instance.sales();}
-  @override Widget build(BuildContext context)=>FutureBuilder<List<Map<String,Object?>>>(future:future,builder:(context,s)=>ListView(padding:const EdgeInsets.all(12),children:[
-    FilledButton.icon(onPressed:()=>newSale(context).then((_)=>setState(()=>future=DB.instance.sales())),icon:const Icon(Icons.add),label:const Text('بيع جديد')),
-    if(s.hasError)Text('خطأ: ${s.error}') else if(!s.hasData)const Center(child:CircularProgressIndicator()) else if(s.data!.isEmpty)const Padding(padding:EdgeInsets.all(20),child:Text('لا توجد فواتير')) else ...s.data!.map((v)=>Card(child:ListTile(title:Text('${v['invoice']} • ${money(v['total'] as num)}'),subtitle:Text('${v['kg']} كجم | ${v['kind']} | ${dateLabel(v['created'] as String)}\nمدفوع: ${money(v['paid'] as num)}'),leading:const Icon(Icons.receipt,color:gold),trailing:IconButton(icon:const Icon(Icons.delete,color:Colors.red),onPressed:()async{try{await DB.instance.deleteSale(v['id'] as int);setState(()=>future=DB.instance.sales());}catch(e){showMessage(context,e.toString());}})))),
-  ]));
+  void openInvoice(Map<String,Object?> sale)=>Navigator.push(context,MaterialPageRoute(builder:(_)=>InvoicePreview(sale:sale)));
+  @override Widget build(BuildContext context)=>FutureBuilder<List<Map<String,Object?>>>(
+    future:future,builder:(context,s)=>ListView(padding:const EdgeInsets.all(12),children:[
+      FilledButton.icon(onPressed:()=>newSale(context).then((_)=>setState(()=>future=DB.instance.sales())),icon:const Icon(Icons.add),label:const Text('بيع جديد')),
+      const SizedBox(height:8),
+      if(s.hasError)Text('خطأ: ${s.error}') else if(!s.hasData)const Center(child:CircularProgressIndicator()) else if(s.data!.isEmpty)const Padding(padding:EdgeInsets.all(20),child:Text('لا توجد فواتير')) else ...s.data!.map((v)=>Card(child:ListTile(
+        onTap:()=>openInvoice(v),
+        title:Text('${v['invoice']} • ${money(v['total'] as num)}'),
+        subtitle:Text('${v['kg']} كجم | ${v['kind']} | ${dateLabel(v['created'] as String)}\nمدفوع: ${money(v['paid'] as num)}'),
+        leading:const Icon(Icons.receipt,color:gold),
+        trailing:Wrap(mainAxisSize:MainAxisSize.min,children:[
+          IconButton(tooltip:'عرض الفاتورة',icon:const Icon(Icons.visibility,color:gold),onPressed:()=>openInvoice(v)),
+          IconButton(icon:const Icon(Icons.delete,color:Colors.red),onPressed:()async{try{await DB.instance.deleteSale(v['id'] as int);setState(()=>future=DB.instance.sales());}catch(e){showMessage(context,e.toString());}})
+        ])
+      ))),
+    ]));
 }
 
+class InvoicePreview extends StatefulWidget{const InvoicePreview({super.key,required this.sale});final Map<String,Object?> sale;@override State<InvoicePreview> createState()=>_InvoicePreviewState();}
+class _InvoicePreviewState extends State<InvoicePreview>{
+  Map<String,Object?>? client;late Future<void> loaded;
+  @override void initState(){super.initState();loaded=load();}
+  Future<void> load()async{client=await DB.instance.customerById(widget.sale['customer_id'] as int?);if(mounted)setState((){});}
+  String val(String key,String fallback)=>widget.sale[key]?.toString()??fallback;
+  Future<void> printInvoice()async{
+    final shop=await DB.instance.setting('shop','تونة بلس');
+    final phone=await DB.instance.setting('phone','777521058');
+    final bank=await DB.instance.setting('bank','254127488');
+    final owner=await DB.instance.setting('owner','محمد صالح بن صالح علي الخلاقي');
+    final address=await DB.instance.setting('address','فوه المتضررين بجانب مسجد هائل خلف البريد');
+    final sale=widget.sale;final total=(sale['total'] as num);final paid=(sale['paid'] as num);final due=total-paid;
+    final doc=pw.Document();
+    doc.addPage(pw.Page(pageFormat:pw.PdfPageFormat.a4,build:(_)=>pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
+      pw.Container(padding:const pw.EdgeInsets.all(16),decoration:pw.BoxDecoration(color:pw.PdfColor.fromHex('#161616')),child:pw.Column(children:[
+        pw.Text(shop,style:pw.TextStyle(color:pw.PdfColor.fromHex('#D7AF59'),fontSize:26,fontWeight:pw.FontWeight.bold)),
+        pw.Text('TUNA PLUS • SALES INVOICE',style:pw.TextStyle(color:pw.PdfColor.fromHex('#D7AF59'),fontSize:12))
+      ])),
+      pw.SizedBox(height:18),
+      pw.Text('Invoice: ${sale['invoice']}',style:pw.TextStyle(fontSize:14,fontWeight:pw.FontWeight.bold)),
+      pw.Text('Date: ${(sale['created'] as String).substring(0,16).replaceFirst('T',' ')}'),
+      pw.Text('Customer: ${client?['name']??'Walk-in customer'}'),
+      pw.SizedBox(height:14),
+      pw.TableHelper.fromTextArray(data:[['Weight (kg)','Price / kg','Total'],[sale['kg'].toString(),sale['price'].toString(),total.toString()]]),
+      pw.SizedBox(height:16),
+      pw.Text('TOTAL: ${money(total)}',style:pw.TextStyle(fontSize:18,fontWeight:pw.FontWeight.bold)),
+      pw.Text('Paid: ${money(paid)}'),pw.Text('Balance: ${money(due)}'),
+      if((sale['note'] as String? ?? '').isNotEmpty)pw.Padding(padding:const pw.EdgeInsets.only(top:10),child:pw.Text('Notes: ${sale['note']}')),
+      pw.SizedBox(height:22),pw.Divider(),
+      pw.Text('Bank details',style:pw.TextStyle(fontSize:14,fontWeight:pw.FontWeight.bold)),
+      pw.Text('Bank Al-Ameeqi: $bank'),pw.Text(owner),pw.Text('Phone: $phone'),pw.Text('Address: $address'),
+      pw.SizedBox(height:18),pw.Center(child:pw.Text('Thank you for your business • Tuna Plus'))
+    ])));
+    await Printing.layoutPdf(onLayout:(_)=>doc.save());
+  }
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('فاتورة العميل')),body:FutureBuilder<void>(future:loaded,builder:(context,s)=>ListView(padding:const EdgeInsets.all(16),children:[
+    Card(child:Padding(padding:const EdgeInsets.all(20),child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+      const Center(child:Icon(Icons.set_meal,color:gold,size:46)),
+      Center(child:Text('تونة بلس',style:Theme.of(context).textTheme.headlineMedium?.copyWith(color:gold,fontWeight:FontWeight.bold))),
+      const Center(child:Text('فاتورة مبيعات',style:TextStyle(fontSize:18))),
+      const SizedBox(height:14),const Divider(),
+      _invoiceRow('رقم الفاتورة',val('invoice','—')),
+      _invoiceRow('التاريخ',dateLabel(val('created',DateTime.now().toIso8601String()))),
+      _invoiceRow('العميل',client?['name']?.toString()??'عميل نقدي'),
+      _invoiceRow('الوزن', '${val('kg','0')} كجم'),
+      _invoiceRow('سعر الكيلو',money(widget.sale['price'] as num)),
+      const Divider(),
+      _invoiceRow('الإجمالي',money(widget.sale['total'] as num),strong:true),
+      _invoiceRow('المدفوع',money(widget.sale['paid'] as num)),
+      _invoiceRow('المتبقي',money((widget.sale['total'] as num)-(widget.sale['paid'] as num)),strong:true),
+      if((widget.sale['note'] as String? ?? '').isNotEmpty)...[const SizedBox(height:8),Text('ملاحظات: ${widget.sale['note']}')],
+      const Divider(),
+      const Text('بيانات التحويل البنكي',style:TextStyle(color:gold,fontWeight:FontWeight.bold)),
+      const Text('بنك العميقي: 254127488'),
+      const Text('محمد صالح بن صالح علي الخلاقي'),
+      const Text('جوال: 777521058'),
+      const Text('فوه المتضررين بجانب مسجد هائل خلف البريد'),
+      const SizedBox(height:12),const Center(child:Text('شكراً لثقتكم • تونة بلس',style:TextStyle(color:gold))),
+    ]))),
+    FilledButton.icon(onPressed:printInvoice,icon:const Icon(Icons.picture_as_pdf),label:const Text('طباعة / حفظ الفاتورة PDF')),
+  ])));
+}
+Widget _invoiceRow(String label,String value,{bool strong=false})=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[Text(label,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null),Flexible(child:Text(value,textAlign:TextAlign.end,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null))]));
 class CustomersPage extends StatefulWidget{const CustomersPage({super.key});@override State<CustomersPage> createState()=>_CustomersPageState();}
 class _CustomersPageState extends State<CustomersPage>{
   late Future<List<Map<String,Object?>>> future;@override void initState(){super.initState();future=DB.instance.customers();}
@@ -274,10 +354,13 @@ class _CustomerLedgerState extends State<CustomerLedger>{
                 builder: (context, invoiceSnapshot) {
                   if (!invoiceSnapshot.hasData) return const SizedBox.shrink();
                   return Column(
-                    children: invoiceSnapshot.data!.map((invoice) => ListTile(
+                    children: invoiceSnapshot.data!.map((invoice) => Card(child:ListTile(
+                      onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>InvoicePreview(sale:invoice))),
+                      leading:const Icon(Icons.receipt_long,color:gold),
                       title: Text('${invoice['invoice']} • ${money(invoice['total'] as num)}'),
                       subtitle: Text(dateLabel(invoice['created'] as String)),
-                    )).toList(),
+                      trailing:const Icon(Icons.chevron_left),
+                    ))).toList(),
                   );
                 },
               ),
@@ -351,14 +434,18 @@ class ReportsPage extends StatelessWidget{
 }
 class SettingsPage extends StatefulWidget{const SettingsPage({super.key});@override State<SettingsPage> createState()=>_SettingsPageState();}
 class _SettingsPageState extends State<SettingsPage>{
-  final store=TextEditingController(),phone=TextEditingController(),price=TextEditingController();
+  final store=TextEditingController(),phone=TextEditingController(),price=TextEditingController(),bank=TextEditingController(),owner=TextEditingController(),address=TextEditingController();
   @override void initState(){super.initState();load();}
-  Future<void> load()async{store.text=await DB.instance.setting('shop','تونة بلس');phone.text=await DB.instance.setting('phone','');price.text=await DB.instance.setting('price','6500');}
-  Future<void> save()async{await DB.instance.setSetting('shop',store.text);await DB.instance.setSetting('phone',phone.text);await DB.instance.setSetting('price',price.text);if(mounted){showMessage(context,'تم حفظ الإعدادات');Navigator.pop(context);}}
+  Future<void> load()async{store.text=await DB.instance.setting('shop','تونة بلس');phone.text=await DB.instance.setting('phone','777521058');price.text=await DB.instance.setting('price','6500');bank.text=await DB.instance.setting('bank','254127488');owner.text=await DB.instance.setting('owner','محمد صالح بن صالح علي الخلاقي');address.text=await DB.instance.setting('address','فوه المتضررين بجانب مسجد هائل خلف البريد');}
+  Future<void> save()async{await DB.instance.setSetting('shop',store.text);await DB.instance.setSetting('phone',phone.text);await DB.instance.setSetting('price',price.text);await DB.instance.setSetting('bank',bank.text);await DB.instance.setSetting('owner',owner.text);await DB.instance.setSetting('address',address.text);if(mounted){showMessage(context,'تم حفظ الإعدادات');Navigator.pop(context);}}
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('إعدادات المتجر')),body:ListView(padding:const EdgeInsets.all(16),children:[
     TextField(controller:store,decoration:const InputDecoration(labelText:'اسم المتجر')),
     TextField(controller:phone,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'رقم التواصل')),
-    TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو الافتراضي')),
+    TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو الافتراضي (قابل للتغيير عند كل بيع)')),
+    const SizedBox(height:14),const Text('بيانات الفواتير',style:TextStyle(color:gold,fontSize:18,fontWeight:FontWeight.bold)),
+    TextField(controller:bank,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'رقم الحساب البنكي')),
+    TextField(controller:owner,decoration:const InputDecoration(labelText:'اسم صاحب الحساب')),
+    TextField(controller:address,maxLines:2,decoration:const InputDecoration(labelText:'عنوان المتجر')),
     const SizedBox(height:20),FilledButton(onPressed:save,child:const Text('حفظ'))
   ]));
 }
