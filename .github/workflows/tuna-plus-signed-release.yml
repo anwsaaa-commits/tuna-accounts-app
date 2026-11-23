@@ -66,9 +66,12 @@ jobs:
               p = kotlin
               s = p.read_text()
               if "keystoreProperties" not in s:
-                  s = s.replace("android {", """val keystoreProperties = java.util.Properties()
+                  s = s.replace("android {", """import java.util.Properties
+          import java.io.FileInputStream
+
+          val keystoreProperties = Properties()
           val keystorePropertiesFile = rootProject.file("key.properties")
-          keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))
+          keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 
           android {""", 1)
               if 'create("release")' not in s:
