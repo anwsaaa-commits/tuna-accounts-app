@@ -87,6 +87,10 @@ class DB {
     if (!kg.isFinite || kg <= 0 || price <= 0 || paid < 0) throw Exception('تحقق من الوزن والسعر والمدفوع');
     if (type != 'نقدي' && type != 'آجل') throw Exception('نوع البيع غير صحيح');
     if (type == 'آجل' && customerId == null) throw Exception('البيع الآجل يتطلب اختيار عميل لتسجيل الدين في كشف حسابه');
+    final db = await database;
+    final available = (await db.rawQuery('SELECT COALESCE(SUM(net_kg),0) net FROM private_batches')).first['net'] as num;
+    final sold = (await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
+    if (available - sold + 0.0001 < kg) throw Exception('الوزن المطلوب يتجاوز المخزون الصافي المتاح (${(available-sold).toStringAsFixed(3)} كجم).');
     final total = (kg * price).round();
     if (total <= 0) throw Exception('قيمة الفاتورة غير صحيحة');
     if (paid > total) throw Exception('المدفوع لا يتجاوز الإجمالي');
@@ -112,11 +116,15 @@ class DB {
     final due = (await db.rawQuery('SELECT COALESCE(SUM(total-paid),0) total FROM sales')).first['total'] as num;
     final purchases = (await db.rawQuery('SELECT COALESCE(SUM(total_cost),0) cost,COALESCE(SUM(net_kg),0) net FROM private_batches')).first;
     final expenseTotal = (await db.rawQuery('SELECT COALESCE(SUM(amount),0) amount FROM expenses')).first['amount'] as num;
-    final netKg = purchases['net'] as num;
-    final costPerKg = netKg > 0 ? (purchases['cost'] as num) / netKg : 0;
-    final costOfSold = (s['weight'] as num) * costPerKg;
+    final soldKg = s['weight'] as num;
+    final stockNetKg = purchases['net'] as num;
+    final costPerNetKg = stockNetKg > 0 ? (purchases['cost'] as num) / stockNetKg : 0;
+    final remainingKg = stockNetKg - soldKg;
+    final costOfSold = soldKg * costPerNetKg;
+    final inventoryCost = (remainingKg > 0 ? remainingKg : 0) * costPerNetKg;
     final netProfit = (s['total'] as num) - costOfSold - expenseTotal;
-    return {'sales':s['total'] as num,'paid':s['paid'] as num,'weight':s['weight'] as num,'collections':c,'debt':due-c,'purchaseCost':purchases['cost'] as num,'costPerKg':costPerKg,'costOfSold':costOfSold,'expenses':expenseTotal,'netProfit':netProfit};
+    final finalProfit = remainingKg <= 0.0001;
+    return {'sales':s['total'] as num,'paid':s['paid'] as num,'weight':soldKg,'collections':c,'debt':due-c,'purchaseCost':purchases['cost'] as num,'costPerKg':costPerNetKg,'costOfSold':costOfSold,'inventoryCost':inventoryCost,'stockNetKg':stockNetKg,'remainingKg':remainingKg,'expenses':expenseTotal,'netProfit':netProfit,'profitFinal':finalProfit ? 1 : 0};
   }
   Future<List<Map<String,Object?>>> reservations() async => (await database).query('reservations',orderBy:'created DESC');
   Future<int> addReservation(String name,String phone,double kg,int price,int deposit,String note) async {
@@ -150,8 +158,26 @@ class DB {
     return (await database).insert('expenses', {'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()});
   }
   Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note) async {
-    if (grossKg <= 0 || purchasePrice <= 0 || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
+    if (!grossKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || !netKg.isFinite || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
     return (await database).insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':DateTime.now().toIso8601String(),'note':note.trim()});
+  }
+  Future<void> updatePrivateBatch(int id,double grossKg,int purchasePrice,double netKg,String note) async {
+    if(!grossKg.isFinite || grossKg<=0 || purchasePrice<=0 || !netKg.isFinite || netKg<=0 || netKg>grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
+    final db=await database;
+    final sold=(await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
+    final stock=(await db.rawQuery('SELECT COALESCE(SUM(net_kg),0) kg FROM private_batches')).first['kg'] as num;
+    final old=(await db.query('private_batches',where:'id=?',whereArgs:[id])).first;
+    final resultingNet=stock-(old['net_kg'] as num)+netKg;
+    if(resultingNet+0.0001<sold) throw Exception('لا يمكن تعديل الشراء: المخزون الصافي الناتج أقل من الوزن المباع.');
+    await db.update('private_batches',{'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'note':note.trim()},where:'id=?',whereArgs:[id]);
+  }
+  Future<void> deletePrivateBatch(int id) async {
+    final db=await database;
+    final sold=(await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
+    final stock=(await db.rawQuery('SELECT COALESCE(SUM(net_kg),0) kg FROM private_batches')).first['kg'] as num;
+    final old=(await db.query('private_batches',where:'id=?',whereArgs:[id])).first;
+    if(stock-(old['net_kg'] as num)+0.0001<sold) throw Exception('لا يمكن حذف الشراء لأنه سيجعل المخزون أقل من الوزن المباع.');
+    await db.delete('private_batches',where:'id=?',whereArgs:[id]);
   }
   Future<void> deleteSale(int id) async {
     final db = await database;
@@ -215,7 +241,7 @@ class _DashboardState extends State<Dashboard> {
       metric('مدفوع الفواتير',money(s.data?['paid']??0),Icons.payments),
       metric('الرصيد المستحق',money(s.data?['debt']??0),Icons.account_balance),
       metric('الوزن المباع','${(s.data?['weight']??0).toStringAsFixed(3)} كجم',Icons.scale),
-      metric('صافي الأرباح التقديري',money(s.data?['netProfit']??0),Icons.trending_up),
+      metric((s.data?['profitFinal']??0)>0?'صافي الربح النهائي':'الربح من المبيعات (غير نهائي)',money(s.data?['netProfit']??0),Icons.trending_up),
     ]),
     const SizedBox(height:12),
     FilledButton.icon(onPressed:()=>newSale(context).then((_)=>setState(()=>data=DB.instance.totals())),icon:const Icon(Icons.add),label:const Text('بيع جديد')),
@@ -502,22 +528,39 @@ class ReportsPage extends StatelessWidget{
     final arabicBold=await PdfGoogleFonts.amiriBold();
     final normal=pw.TextStyle(font:arabicFont,fontSize:10);
     final bold=pw.TextStyle(font:arabicBold,fontSize:14);
-    doc.addPage(pw.Page(build:(_)=>pw.Directionality(textDirection:pw.TextDirection.rtl,child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
-      pw.Text('تقرير مبيعات تونة بلس',style:bold,textAlign:pw.TextAlign.right),
-      pw.SizedBox(height:10),
-      pw.Text('إجمالي المبيعات: ${money(t['sales']!)}',style:normal),
-      pw.Text('المدفوع: ${money(t['paid']!)}',style:normal),
-      pw.Text('التحصيلات: ${money(t['collections']!)}',style:normal),
-      pw.Text('الرصيد المستحق: ${money(t['debt']!)}',style:normal),
-      pw.Text('الوزن المباع: ${t['weight']!.toStringAsFixed(3)} كجم',style:normal),
-      pw.Text('صافي الأرباح التقديري: ${money(t['netProfit']??0)}',style:bold),
-      pw.SizedBox(height:12),
-      pw.TableHelper.fromTextArray(data:[['رقم الفاتورة','التاريخ','الوزن','الإجمالي','المدفوع'],...rows.map((r)=>[r['invoice'],(r['created'] as String).substring(0,10),r['kg'],r['total'],r['paid']])],headerStyle:pw.TextStyle(font:arabicBold,fontSize:9),cellStyle:pw.TextStyle(font:arabicFont,fontSize:9))
-    ]))));
+    final heading=pw.TextStyle(font:arabicBold,fontSize:20,color:pdf.PdfColor.fromHex('#B78B34'));
+    final number=(num? v)=>NumberFormat('#,##0.##','en').format(v??0);
+    doc.addPage(pw.MultiPage(pageFormat:pdf.PdfPageFormat.a4,margin:const pw.EdgeInsets.all(28),header:(ctx)=>pw.Container(alignment:pw.Alignment.centerRight,padding:const pw.EdgeInsets.only(bottom:8),child:pw.Text('تونة بلس • تقرير الحسابات',style:heading)),footer:(ctx)=>pw.Container(alignment:pw.Alignment.center,padding:const pw.EdgeInsets.only(top:8),child:pw.Text('صفحة ${ctx.pageNumber} من ${ctx.pagesCount}',style:normal)),build:(ctx)=>[
+      pw.Directionality(textDirection:pw.TextDirection.rtl,child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
+        pw.Container(padding:const pw.EdgeInsets.all(12),decoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#F4E8CF'),borderRadius:pw.BorderRadius.circular(8)),child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
+          pw.Text('ملخص مالي',style:pw.TextStyle(font:arabicBold,fontSize:15,color:pdf.PdfColor.fromHex('#27221A'))),
+          pw.SizedBox(height:8),
+          pw.Text('إجمالي المبيعات: ${number(t['sales'])} ر.ي',style:normal),
+          pw.Text('المدفوع في الفواتير: ${number(t['paid'])} ر.ي',style:normal),
+          pw.Text('التحصيلات اللاحقة: ${number(t['collections'])} ر.ي',style:normal),
+          pw.Text('الديون المتبقية: ${number(t['debt'])} ر.ي',style:normal),
+          pw.Text('الوزن المباع: ${number(t['weight'])} كجم',style:normal),
+          pw.Text('الربح من المبيعات بعد المصروفات: ${number(t['netProfit'])} ر.ي • ${(t['profitFinal']??0)>0?'نهائي':'غير نهائي بسبب وجود مخزون'}',style:bold),
+          pw.Text('المخزون الصافي المتبقي: ${number(t['remainingKg'])} كجم',style:normal),
+          pw.Text('قيمة تكلفة المخزون المتبقي: ${number(t['inventoryCost'])} ر.ي',style:normal),
+        ])),
+        pw.SizedBox(height:14),
+        pw.Text('تفاصيل الفواتير',style:pw.TextStyle(font:arabicBold,fontSize:15)),
+        pw.SizedBox(height:8),
+        pw.TableHelper.fromTextArray(
+          headers:['رقم الفاتورة','التاريخ','الوزن كجم','السعر/كجم','الإجمالي','المدفوع'],
+          data:rows.map((r)=>[r['invoice']??'—',(r['created'] as String).substring(0,10),number(r['kg'] as num),number(r['price'] as num),number(r['total'] as num),number(r['paid'] as num)]).toList(),
+          headerStyle:pw.TextStyle(font:arabicBold,fontSize:8,color:pdf.PdfColors.white),
+          headerDecoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#2C2924')),
+          cellStyle:pw.TextStyle(font:arabicFont,fontSize:8),
+          cellAlignment:pw.Alignment.center,
+          columnWidths:{0:const pw.FlexColumnWidth(1.6),1:const pw.FlexColumnWidth(1.2),2:const pw.FlexColumnWidth(0.8),3:const pw.FlexColumnWidth(1.0),4:const pw.FlexColumnWidth(1.1),5:const pw.FlexColumnWidth(1.1)},
+        ),
+      ]))
+    ]));
     await Printing.layoutPdf(onLayout:(_)=>doc.save());
   }
-  @override
-  Widget build(BuildContext context) {
+  @override Widget build(BuildContext context) {
     return FutureBuilder<Map<String, num>>(
       future: DB.instance.totals(),
       builder: (context, snapshot) {
@@ -530,7 +573,10 @@ class ReportsPage extends StatelessWidget{
           'collections': 'التحصيلات',
           'debt': 'الديون القائمة',
           'weight': 'الوزن المباع',
-          'netProfit': 'صافي الأرباح التقديري',
+          'netProfit': (totals['profitFinal']??0)>0 ? 'صافي الربح النهائي' : 'الربح من المبيعات (غير نهائي)',
+          'remainingKg':'المخزون الصافي المتبقي',
+          'inventoryCost':'تكلفة المخزون المتبقي',
+          'expenses':'إجمالي المصروفات',
         };
         return ListView(
           padding: const EdgeInsets.all(12),
@@ -538,7 +584,7 @@ class ReportsPage extends StatelessWidget{
             ...labels.entries.map((entry) => Card(
               child: ListTile(
                 title: Text(entry.value),
-                trailing: Text(entry.key == 'weight'
+                trailing: Text(entry.key=='weight'||entry.key=='remainingKg'
                     ? '${totals[entry.key]!.toStringAsFixed(3)} كجم'
                     : money(totals[entry.key]!)),
               ),
@@ -569,6 +615,18 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظة (اختياري)')),
       const SizedBox(height:8),const Text('هذه البيانات خاصة ولا تظهر في فواتير العملاء أو كشوفهم.')
     ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addPrivateBatch(double.parse(gross.text),int.parse(price.text),double.parse(net.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ'))]));
+  }
+  Future<void> editEntry(Map<String,Object?> row)async{
+    final gross=TextEditingController(text:(row['gross_kg'] as num).toString());
+    final price=TextEditingController(text:(row['purchase_price'] as num).toString());
+    final net=TextEditingController(text:(row['net_kg'] as num).toString());
+    final note=TextEditingController(text:row['note'] as String? ?? '');
+    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('تعديل عملية شراء'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+      TextField(controller:gross,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الإجمالي (كجم)')),
+      TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر شراء الكيلو')),
+      TextField(controller:net,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الصافي (كجم)')),
+      TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظة')),
+    ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.updatePrivateBatch(row['id'] as int,double.parse(gross.text),int.parse(price.text),double.parse(net.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ التعديل'))]));
   }
   Future<void> addExpense() async {
     final amount=TextEditingController(),note=TextEditingController();
@@ -610,7 +668,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       }),
       const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
       if(rows.isEmpty)const Padding(padding:EdgeInsets.all(18),child:Text('لم تسجل مشتريات بعد',textAlign:TextAlign.center)),
-      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;return Card(child:ListTile(title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • الإجمالي: ${money(tc)}'),isThreeLine:true,trailing:Text(money(n==0?0:tc/n))));})
+      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;return Card(child:ListTile(title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • الإجمالي: ${money(tc)}'),isThreeLine:true,trailing:PopupMenuButton<String>(onSelected:(action)async{if(action=='edit'){await editEntry(r);}else if(action=='delete'){try{await DB.instance.deletePrivateBatch(r['id'] as int);if(mounted)setState(reloadEntries);}catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}}},itemBuilder:(_)=>const [PopupMenuItem(value:'edit',child:Text('تعديل عملية الشراء')),PopupMenuItem(value:'delete',child:Text('حذف عملية الشراء'))],child:const Icon(Icons.more_vert))));})
     ]);
   }));
 }
