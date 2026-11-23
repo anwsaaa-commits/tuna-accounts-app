@@ -44,7 +44,9 @@ jobs:
           subprojects {
               afterEvaluate {
                   extensions.findByName("android")?.let { androidExt ->
-                      androidExt.compileSdkVersion(36)
+                      androidExt.javaClass.methods
+                          .firstOrNull { it.name == "compileSdkVersion" && it.parameterCount == 1 }
+                          ?.invoke(androidExt, 36)
                   }
               }
           }
