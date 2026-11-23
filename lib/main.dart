@@ -123,7 +123,7 @@ class DB {
     final inventoryCost = (remainingKg > 0 ? remainingKg : 0) * costPerNetKg;
     final expensesAllocated = stockNetKg > 0 ? expenseTotal * (soldKg / stockNetKg).clamp(0,1) : expenseTotal;
     final netProfit = (s['total'] as num) - costOfSold - expensesAllocated;
-    final finalProfit = remainingKg <= 0.0001;
+    final finalProfit = stockNetKg > 0 && remainingKg <= 0.0001;
     return {'sales':s['total'] as num,'paid':s['paid'] as num,'weight':soldKg,'collections':c,'debt':due-c,'purchaseCost':purchases['cost'] as num,'costPerKg':costPerNetKg,'costOfSold':costOfSold,'inventoryCost':inventoryCost,'stockNetKg':stockNetKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':expensesAllocated,'netProfit':netProfit,'profitFinal':finalProfit ? 1 : 0};
   }
   Future<List<Map<String,Object?>>> reservations() async => (await database).query('reservations',orderBy:'created DESC');
