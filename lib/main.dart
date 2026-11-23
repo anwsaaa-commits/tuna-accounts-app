@@ -721,11 +721,28 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
   }
   Future<void> addExpense() async {
     final amount=TextEditingController(),note=TextEditingController();
-    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('تسجيل مصروف خاص'),content:Column(mainAxisSize:MainAxisSize.min,children:[
-      TextField(controller:amount,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'مبلغ المصروف (ريال)')),
-      TextField(controller:note,maxLines:2,decoration:const InputDecoration(labelText:'بيان المصروف / ملاحظات')),
-      const SizedBox(height:8),const Text('المصروفات خاصة ولا تظهر في فواتير العملاء أو كشوفهم.')
-    ]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addExpense(int.parse(amount.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ المصروف'))]));
+    try {
+      await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
+        title:const Text('تسجيل مصروف خاص'),
+        content:SizedBox(width:double.maxFinite,height:MediaQuery.of(ctx).size.height*0.38,
+          child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+            TextField(controller:amount,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'مبلغ المصروف (ريال)',prefixIcon:Icon(Icons.payments))),
+            TextField(controller:note,maxLines:3,decoration:const InputDecoration(labelText:'بيان المصروف / ملاحظات',prefixIcon:Icon(Icons.notes))),
+            const SizedBox(height:8),
+            const Text('المصروفات خاصة ولا تظهر في فواتير العملاء أو كشوفهم.')
+          ]))),
+        actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),
+          FilledButton.icon(icon:const Icon(Icons.save),onPressed:()async{
+            final value=int.tryParse(amount.text.trim());
+            if(value==null||value<=0){showMessage(ctx,'أدخل مبلغًا صحيحًا أكبر من صفر');return;}
+            if(note.text.trim().isEmpty){showMessage(ctx,'اكتب بيان المصروف لتسهيل المراجعة');return;}
+            try{await DB.instance.addExpense(value,note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}
+            catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}
+          },label:const Text('حفظ المصروف'))]
+      ));
+    } finally {
+      amount.dispose();note.dispose();
+    }
   }
   Future<void> showBatchStatement(Map<String,Object?> purchase) async {
     try {
