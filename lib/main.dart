@@ -78,13 +78,16 @@ class DB {
     return (await database).insert('customers', {'name':name.trim(),'phone':phone.trim(),'note':note.trim()});
   }
   Future<int> addSale(int? customerId, double kg, int price, int paid, String type, String note) async {
-    if (kg <= 0 || price <= 0 || paid < 0) throw Exception('تحقق من الوزن والسعر والمدفوع');
+    if (!kg.isFinite || kg <= 0 || price <= 0 || paid < 0) throw Exception('تحقق من الوزن والسعر والمدفوع');
+    if (type != 'نقدي' && type != 'آجل') throw Exception('نوع البيع غير صحيح');
+    if (type == 'آجل' && customerId == null) throw Exception('البيع الآجل يتطلب اختيار عميل لتسجيل الدين في كشف حسابه');
     final total = (kg * price).round();
+    if (total <= 0) throw Exception('قيمة الفاتورة غير صحيحة');
     if (paid > total) throw Exception('المدفوع لا يتجاوز الإجمالي');
     if (type == 'نقدي' && paid != total) throw Exception('البيع النقدي يجب أن يكون مدفوعاً بالكامل');
     return (await database).insert('sales', {
       'invoice':'TP-${DateTime.now().microsecondsSinceEpoch}','customer_id':customerId,
-      'kg':kg,'price':price,'total':total,'paid':paid,'kind':type,'note':note,
+      'kg':kg,'price':price,'total':total,'paid':paid,'kind':type,'note':note.trim(),
       'created':DateTime.now().toIso8601String()
     });
   }
