@@ -8,6 +8,7 @@ import 'package:pdf/pdf.dart' as pdf;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 
 const gold = Color(0xFFD7AF59);
 const dark = Color(0xFF101114);
@@ -55,10 +56,11 @@ class DB {
   Database? _database;
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await openDatabase(p.join(await getDatabasesPath(), 'tuna_plus.db'), version: 3,
+    _database = await openDatabase(p.join(await getDatabasesPath(), 'tuna_plus.db'), version: 4,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) { await db.execute('CREATE TABLE private_batches(id INTEGER PRIMARY KEY AUTOINCREMENT,gross_kg REAL NOT NULL,purchase_price INTEGER NOT NULL,total_cost INTEGER NOT NULL,net_kg REAL NOT NULL,created TEXT NOT NULL,note TEXT)'); }
         if (oldVersion < 3) { await db.execute('CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,amount INTEGER NOT NULL,note TEXT NOT NULL,created TEXT NOT NULL)'); }
+        if (oldVersion < 4) { await db.execute('CREATE TABLE reservations(id INTEGER PRIMARY KEY AUTOINCREMENT,customer_name TEXT NOT NULL,phone TEXT,kg REAL NOT NULL,price INTEGER NOT NULL,total INTEGER NOT NULL,deposit INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL,note TEXT,created TEXT NOT NULL)'); }
       },
       onCreate: (db, version) async {
         await db.execute('CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,phone TEXT,note TEXT)');
@@ -67,6 +69,7 @@ class DB {
         await db.execute('CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT)');
         await db.execute('CREATE TABLE private_batches(id INTEGER PRIMARY KEY AUTOINCREMENT,gross_kg REAL NOT NULL,purchase_price INTEGER NOT NULL,total_cost INTEGER NOT NULL,net_kg REAL NOT NULL,created TEXT NOT NULL,note TEXT)');
         await db.execute('CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,amount INTEGER NOT NULL,note TEXT NOT NULL,created TEXT NOT NULL)');
+        await db.execute('CREATE TABLE reservations(id INTEGER PRIMARY KEY AUTOINCREMENT,customer_name TEXT NOT NULL,phone TEXT,kg REAL NOT NULL,price INTEGER NOT NULL,total INTEGER NOT NULL,deposit INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL,note TEXT,created TEXT NOT NULL)');
         await db.insert('settings', {'key':'shop','value':'تونة بلس'});
         await db.insert('settings', {'key':'price','value':'6500'});
         await db.insert('settings', {'key':'bank','value':'254127488'});
@@ -108,8 +111,23 @@ class DB {
     final s = (await db.rawQuery('SELECT COALESCE(SUM(total),0) total,COALESCE(SUM(paid),0) paid,COALESCE(SUM(kg),0) weight FROM sales')).first;
     final c = (await db.rawQuery('SELECT COALESCE(SUM(amount),0) total FROM collections')).first['total'] as num;
     final due = (await db.rawQuery('SELECT COALESCE(SUM(total-paid),0) total FROM sales')).first['total'] as num;
-    return {'sales':s['total'] as num,'paid':s['paid'] as num,'weight':s['weight'] as num,'collections':c,'debt':due-c};
+    final purchases = (await db.rawQuery('SELECT COALESCE(SUM(total_cost),0) cost,COALESCE(SUM(net_kg),0) net FROM private_batches')).first;
+    final expenseTotal = (await db.rawQuery('SELECT COALESCE(SUM(amount),0) amount FROM expenses')).first['amount'] as num;
+    final netKg = purchases['net'] as num;
+    final costPerKg = netKg > 0 ? (purchases['cost'] as num) / netKg : 0;
+    final costOfSold = (s['weight'] as num) * costPerKg;
+    final netProfit = (s['total'] as num) - costOfSold - expenseTotal;
+    return {'sales':s['total'] as num,'paid':s['paid'] as num,'weight':s['weight'] as num,'collections':c,'debt':due-c,'purchaseCost':purchases['cost'] as num,'costPerKg':costPerKg,'costOfSold':costOfSold,'expenses':expenseTotal,'netProfit':netProfit};
   }
+  Future<List<Map<String,Object?>>> reservations() async => (await database).query('reservations',orderBy:'created DESC');
+  Future<int> addReservation(String name,String phone,double kg,int price,int deposit,String note) async {
+    if(name.trim().isEmpty || kg<=0 || price<=0 || deposit<0) throw Exception('تحقق من اسم العميل والوزن والسعر والعربون');
+    final total=(kg*price).round();
+    if(deposit>total) throw Exception('العربون لا يمكن أن يتجاوز إجمالي الحجز');
+    return (await database).insert('reservations',{'customer_name':name.trim(),'phone':phone.trim(),'kg':kg,'price':price,'total':total,'deposit':deposit,'status':'بانتظار وصول الكمية','note':note.trim(),'created':DateTime.now().toIso8601String()});
+  }
+  Future<void> updateReservationStatus(int id,String status) async => (await database).update('reservations',{'status':status},where:'id=?',whereArgs:[id]);
+  Future<void> deleteReservation(int id) async => (await database).delete('reservations',where:'id=?',whereArgs:[id]);
   Future<Map<String,num>> customerTotals(int id) async {
     final db = await database;
     final s = (await db.rawQuery('SELECT COALESCE(SUM(total),0) total,COALESCE(SUM(paid),0) paid FROM sales WHERE customer_id=?',[id])).first;
