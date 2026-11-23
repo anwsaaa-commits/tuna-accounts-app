@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
+import 'package:pdf/pdf.dart' as pdf;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
@@ -54,12 +55,14 @@ class DB {
   Database? _database;
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await openDatabase(p.join(await getDatabasesPath(), 'tuna_plus.db'), version: 1,
+    _database = await openDatabase(p.join(await getDatabasesPath(), 'tuna_plus.db'), version: 2,
+      onUpgrade: (db, oldVersion, newVersion) async { if (oldVersion < 2) { await db.execute('CREATE TABLE private_batches(id INTEGER PRIMARY KEY AUTOINCREMENT,gross_kg REAL NOT NULL,purchase_price INTEGER NOT NULL,total_cost INTEGER NOT NULL,net_kg REAL NOT NULL,created TEXT NOT NULL,note TEXT)'); },
       onCreate: (db, version) async {
         await db.execute('CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,phone TEXT,note TEXT)');
         await db.execute('CREATE TABLE sales(id INTEGER PRIMARY KEY AUTOINCREMENT,invoice TEXT UNIQUE,customer_id INTEGER,kg REAL,price INTEGER,total INTEGER,paid INTEGER,kind TEXT,note TEXT,created TEXT)');
         await db.execute('CREATE TABLE collections(id INTEGER PRIMARY KEY AUTOINCREMENT,customer_id INTEGER,amount INTEGER,note TEXT,created TEXT)');
         await db.execute('CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT)');
+        await db.execute('CREATE TABLE private_batches(id INTEGER PRIMARY KEY AUTOINCREMENT,gross_kg REAL NOT NULL,purchase_price INTEGER NOT NULL,total_cost INTEGER NOT NULL,net_kg REAL NOT NULL,created TEXT NOT NULL,note TEXT)');
         await db.insert('settings', {'key':'shop','value':'تونة بلس'});
         await db.insert('settings', {'key':'price','value':'6500'});
         await db.insert('settings', {'key':'bank','value':'254127488'});
@@ -115,6 +118,11 @@ class DB {
     return result.isEmpty ? fallback : result.first['value'] as String;
   }
   Future<void> setSetting(String key, String value) async => (await database).insert('settings', {'key':key,'value':value}, conflictAlgorithm: ConflictAlgorithm.replace);
+  Future<List<Map<String,Object?>>> privateBatches() async => (await database).query('private_batches', orderBy: 'created DESC');
+  Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note) async {
+    if (grossKg <= 0 || purchasePrice <= 0 || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
+    return (await database).insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':DateTime.now().toIso8601String(),'note':note.trim()});
+  }
   Future<void> deleteSale(int id) async {
     final db = await database;
     final sale = (await db.query('sales',where:'id=?',whereArgs:[id])).first;
@@ -229,7 +237,7 @@ class _InvoicePageState extends State<InvoicePage>{
         title:Text('${v['invoice']} • ${money(v['total'] as num)}'),
         subtitle:Text('${v['kg']} كجم | ${v['kind']} | ${dateLabel(v['created'] as String)}\nمدفوع: ${money(v['paid'] as num)}'),
         leading:const Icon(Icons.receipt,color:gold),
-        trailing:Wrap(mainAxisSize:MainAxisSize.min,children:[
+        trailing:Wrap(children:[
           IconButton(tooltip:'عرض الفاتورة',icon:const Icon(Icons.visibility,color:gold),onPressed:()=>openInvoice(v)),
           IconButton(icon:const Icon(Icons.delete,color:Colors.red),onPressed:()async{try{await DB.instance.deleteSale(v['id'] as int);setState(()=>future=DB.instance.sales());}catch(e){showMessage(context,e.toString());}})
         ])
@@ -251,8 +259,8 @@ class _InvoicePreviewState extends State<InvoicePreview>{
     final address=await DB.instance.setting('address','فوه المتضررين بجانب مسجد هائل خلف البريد');
     final sale=widget.sale;final total=(sale['total'] as num);final paid=(sale['paid'] as num);final due=total-paid;
     final doc=pw.Document();
-    doc.addPage(pw.Page(pageFormat:pw.PdfPageFormat.a4,build:(_)=>pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
-      pw.Container(padding:const pw.EdgeInsets.all(16),decoration:pw.BoxDecoration(color:pw.PdfColor.fromHex('#161616')),child:pw.Column(children:[
+    doc.addPage(pw.Page(pageFormat:pdf.PdfPageFormat.a4,build:(_)=>pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
+      pw.Container(padding:const pw.EdgeInsets.all(16),decoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#161616')),child:pw.Column(children:[
         pw.Text(shop,style:pw.TextStyle(color:pw.PdfColor.fromHex('#D7AF59'),fontSize:26,fontWeight:pw.FontWeight.bold)),
         pw.Text('TUNA PLUS • SALES INVOICE',style:pw.TextStyle(color:pw.PdfColor.fromHex('#D7AF59'),fontSize:12))
       ])),
@@ -434,6 +442,45 @@ class ReportsPage extends StatelessWidget{
     );
   }
 }
+class PrivateCostPage extends StatefulWidget { const PrivateCostPage({super.key}); @override State<PrivateCostPage> createState()=>_PrivateCostPageState(); }
+class _PrivateCostPageState extends State<PrivateCostPage> {
+  late Future<List<Map<String,Object?>>> entries;
+  @override void initState(){super.initState();entries=DB.instance.privateBatches();}
+  Future<void> addEntry() async {
+    final gross=TextEditingController(),price=TextEditingController(),net=TextEditingController(),note=TextEditingController();
+    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('تسجيل شراء تونة (خاص)'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+      TextField(controller:gross,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الإجمالي عند الشراء (كجم)')),
+      TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'تكلفة شراء الكيلو (ريال)')),
+      TextField(controller:net,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الصافي بعد التقطيع (كجم)')),
+      TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظة (اختياري)')),
+      const SizedBox(height:8),const Text('هذه البيانات خاصة ولا تظهر في فواتير العملاء أو كشوفهم.')
+    ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addPrivateBatch(double.parse(gross.text),int.parse(price.text),double.parse(net.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(()=>entries=DB.instance.privateBatches());}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ'))]));
+  }
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('حسابات الشراء الخاصة')),body:FutureBuilder<List<Map<String,Object?>>>(future:entries,builder:(context,s){
+    if(s.hasError)return Center(child:Text('خطأ: ${s.error}'));
+    if(!s.hasData)return const Center(child:CircularProgressIndicator());
+    final rows=s.data!;
+    final gross=rows.fold<num>(0,(a,r)=>a+(r['gross_kg'] as num));
+    final net=rows.fold<num>(0,(a,r)=>a+(r['net_kg'] as num));
+    final costs=rows.fold<num>(0,(a,r)=>a+(r['total_cost'] as num));
+    final loss=gross-net;final eff=net==0?0:costs/net;
+    return ListView(padding:const EdgeInsets.all(12),children:[
+      const Text('بيانات سرية لصاحب المتجر فقط',textAlign:TextAlign.center,style:TextStyle(color:gold,fontWeight:FontWeight.bold)),
+      GridView.count(shrinkWrap:true,physics:const NeverScrollableScrollPhysics(),crossAxisCount:2,childAspectRatio:1.5,children:[
+        Card(child:ListTile(title:const Text('إجمالي الشراء'),subtitle:Text('${gross.toStringAsFixed(2)} كجم'))),
+        Card(child:ListTile(title:const Text('الوزن الصافي'),subtitle:Text('${net.toStringAsFixed(2)} كجم'))),
+        Card(child:ListTile(title:const Text('إجمالي رأس المال'),subtitle:Text(money(costs)))),
+        Card(child:ListTile(title:const Text('الفاقد'),subtitle:Text('${loss.toStringAsFixed(2)} كجم'))),
+      ]),
+      Card(child:ListTile(title:const Text('التكلفة الحقيقية للكيلو الصافي'),subtitle:Text(money(eff),style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))),
+      Card(child:ListTile(title:const Text('فرق المبيعات المسجلة والمشتريات المسجلة (تقريبي)'),subtitle:FutureBuilder<Map<String,num>>(future:DB.instance.totals(),builder:(context,t)=>Text(t.hasData?money(t.data!['sales']!-costs):'...')))),
+      FilledButton.icon(onPressed:addEntry,icon:const Icon(Icons.add),label:const Text('إضافة عملية شراء')),
+      const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
+      if(rows.isEmpty)const Padding(padding:EdgeInsets.all(18),child:Text('لم تسجل مشتريات بعد',textAlign:TextAlign.center)),
+      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;return Card(child:ListTile(title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • الإجمالي: ${money(tc)}'),isThreeLine:true,trailing:Text(money(n==0?0:tc/n))));})
+    ]);
+  }));
+}
 class SettingsPage extends StatefulWidget{const SettingsPage({super.key});@override State<SettingsPage> createState()=>_SettingsPageState();}
 class _SettingsPageState extends State<SettingsPage>{
   final store=TextEditingController(),phone=TextEditingController(),price=TextEditingController(),bank=TextEditingController(),owner=TextEditingController(),address=TextEditingController();
@@ -448,6 +495,6 @@ class _SettingsPageState extends State<SettingsPage>{
     TextField(controller:bank,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'رقم الحساب البنكي')),
     TextField(controller:owner,decoration:const InputDecoration(labelText:'اسم صاحب الحساب')),
     TextField(controller:address,maxLines:2,decoration:const InputDecoration(labelText:'عنوان المتجر')),
-    const SizedBox(height:20),FilledButton(onPressed:save,child:const Text('حفظ'))
+    const SizedBox(height:20),OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const PrivateCostPage())),icon:const Icon(Icons.lock),label:const Text('حسابات الشراء الخاصة (لا تظهر للزبائن)')),const SizedBox(height:12),FilledButton(onPressed:save,child:const Text('حفظ'))
   ]));
 }
