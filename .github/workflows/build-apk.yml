@@ -1,7 +1,7 @@
-name: Build Tuna Sales Ledger APK
+name: Build Tuna Plus Signed APK
 on:
   push:
-    branches: [main, tuna-plus-official-update-1.1.0]
+    branches: [tuna-plus-official-update-1.1.0]
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,6 +16,79 @@ jobs:
           cache: true
       - name: Generate Android platform files
         run: flutter create . --platforms=android --org com.alshaheen.tunaplus --project-name tuna_sales_ledger --no-pub
+      - name: Configure permanent Android release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" || (echo "Missing GitHub secret KEYSTORE_BASE64" && exit 1)
+          test -n "$KEYSTORE_PASSWORD" || (echo "Missing GitHub secret KEYSTORE_PASSWORD" && exit 1)
+          test -n "$KEY_PASSWORD" || (echo "Missing GitHub secret KEY_PASSWORD" && exit 1)
+          test -n "$KEY_ALIAS" || (echo "Missing GitHub secret KEY_ALIAS" && exit 1)
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/tuna-plus-release.jks
+          cat > android/key.properties <<EOF
+          storePassword=$KEYSTORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=tuna-plus-release.jks
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          groovy = Path("android/app/build.gradle")
+          kotlin = Path("android/app/build.gradle.kts")
+          if groovy.exists():
+              p = groovy
+              s = p.read_text()
+              if "signingConfigs {" not in s:
+                  block = """
+              signingConfigs {
+                  release {
+                      keyAlias keystoreProperties['keyAlias']
+                      keyPassword keystoreProperties['keyPassword']
+                      storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+                      storePassword keystoreProperties['storePassword']
+                  }
+              }
+          """
+                  s = s.replace("android {", """def keystoreProperties = new Properties()
+          def keystorePropertiesFile = rootProject.file("key.properties")
+          keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+
+          android {""", 1)
+                  s = s.replace("    buildTypes {", block + "\n    buildTypes {", 1)
+              s = re.sub(r"(release\\s*\\{)(?![^}]*signingConfig)", r"\\1\\n            signingConfig signingConfigs.release", s, count=1, flags=re.S)
+              p.write_text(s)
+          elif kotlin.exists():
+              p = kotlin
+              s = p.read_text()
+              if 'create("release")' not in s:
+                  s = s.replace("android {", """import java.util.Properties
+          import java.io.FileInputStream
+
+          val keystoreProperties = Properties()
+          val keystorePropertiesFile = rootProject.file("key.properties")
+          keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+
+          android {""", 1)
+                  s = s.replace("    buildTypes {", """    signingConfigs {
+                  create("release") {
+                      keyAlias = keystoreProperties["keyAlias"] as String
+                      keyPassword = keystoreProperties["keyPassword"] as String
+                      storeFile = file(keystoreProperties["storeFile"] as String)
+                      storePassword = keystoreProperties["storePassword"] as String
+                  }
+              }
+              buildTypes {""", 1)
+              s = re.sub(r'(getByName\\("release"\\)\\s*\\{)', r'\\1\\n            signingConfig = signingConfigs.getByName("release")', s, count=1)
+              p.write_text(s)
+          else:
+              raise SystemExit("Android app Gradle file not found")
+          PY
+          rm -f android/key.properties
       - name: Add contacts permission
         run: |
           python3 - <<'PY'
@@ -39,13 +112,19 @@ jobs:
       - name: Raise cached Flutter plugin compile SDK to 36
         run: |
           find "$HOME/.pub-cache" -path '*/android/build.gradle*' -type f -print0 | xargs -0 -r sed -i -E 's/compileSdk[[:space:]]+flutter\\.compileSdkVersion/compileSdk 36/g; s/compileSdk[[:space:]]*=[[:space:]]*flutter\\.compileSdkVersion/compileSdk = 36/g; s/compileSdkVersion[[:space:]]+flutter\\.compileSdkVersion/compileSdkVersion 36/g; s/compileSdkVersion[[:space:]]+34/compileSdkVersion 36/g; s/compileSdk[[:space:]]+34/compileSdk 36/g; s/compileSdk[[:space:]]*=[[:space:]]*34/compileSdk = 36/g'
-          echo "Updated cached plugin Android compileSdk declarations:"
-          grep -R -n -E 'compileSdk(Version)?[[:space:]]*(=)?[[:space:]]*(34|flutter\\.compileSdkVersion)' "$HOME/.pub-cache" --include='build.gradle' --include='build.gradle.kts' || true
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
       - run: flutter build apk --release
+      - name: Verify APK signature
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          "$APKSIGNER" verify --verbose "$APK"
+          "$APKSIGNER" verify --print-certs "$APK" | tee signing-certificate.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: tuna-plus-1.1.0-test-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: tuna-plus-1.1.0-signed-release-apk
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            signing-certificate.txt
           if-no-files-found: error
