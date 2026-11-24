@@ -307,6 +307,7 @@ class _DashboardState extends State<Dashboard> {
       metric('الوزن المباع','${(s.data?['weight']??0).toStringAsFixed(3)} كجم',Icons.scale),
       metric((s.data?['profitReliable']??1)<=0?'الربح غير محسوب (نقص مخزون)':((s.data?['profitFinal']??0)>0?'صافي الربح النهائي':'الربح من المبيعات (غير نهائي)'),money(s.data?['netProfit']??0),Icons.trending_up),
     ]),
+    if((s.data?['unallocatedSoldKg']??0)>0.0001)Card(color:Colors.orange.withValues(alpha:0.12),child:Padding(padding:const EdgeInsets.all(12),child:Text('تنبيه محاسبي: يوجد وزن مبيعات غير موزع على المخزون مقدار ${(s.data?['unallocatedSoldKg']??0).toStringAsFixed(3)} كجم. لا تعتمد الربح قبل مراجعة عمليات الشراء والمبيعات.',style:const TextStyle(color:Colors.orange,fontWeight:FontWeight.bold)))),
     const SizedBox(height:12),
     FilledButton.icon(onPressed:()=>newSale(context).then((_)=>setState(()=>data=DB.instance.totals())),icon:const Icon(Icons.add),label:const Text('بيع جديد')),
     OutlinedButton.icon(onPressed:()=>newCustomer(context).then((_)=>setState(()=>data=DB.instance.totals())),icon:const Icon(Icons.person_add),label:const Text('إضافة عميل')),
