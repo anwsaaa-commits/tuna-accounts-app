@@ -88,26 +88,32 @@ class DB {
     if (type != 'نقدي' && type != 'آجل') throw Exception('نوع البيع غير صحيح');
     if (type == 'آجل' && customerId == null) throw Exception('البيع الآجل يتطلب اختيار عميل لتسجيل الدين في كشف حسابه');
     final db = await database;
-    final available = (await db.rawQuery('SELECT COALESCE(SUM(net_kg),0) net FROM private_batches')).first['net'] as num;
-    final sold = (await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
-    if (available - sold + 0.0001 < kg) throw Exception('الوزن المطلوب يتجاوز المخزون الصافي المتاح (${(available-sold).toStringAsFixed(3)} كجم).');
     final total = (kg * price).round();
     if (total <= 0) throw Exception('قيمة الفاتورة غير صحيحة');
     if (paid > total) throw Exception('المدفوع لا يتجاوز الإجمالي');
     if (type == 'نقدي' && paid != total) throw Exception('البيع النقدي يجب أن يكون مدفوعاً بالكامل');
-    return (await database).insert('sales', {
-      'invoice':'TP-${DateTime.now().microsecondsSinceEpoch}','customer_id':customerId,
-      'kg':kg,'price':price,'total':total,'paid':paid,'kind':type,'note':note.trim(),
-      'created':DateTime.now().toIso8601String()
+    // Run stock validation and sale insertion in one transaction to prevent two
+    // simultaneous sales from overselling the same remaining inventory.
+    return db.transaction((txn) async {
+      final available = (await txn.rawQuery('SELECT COALESCE(SUM(net_kg),0) net FROM private_batches')).first['net'] as num;
+      final sold = (await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
+      if (available - sold + 0.0001 < kg) throw Exception('الوزن المطلوب يتجاوز المخزون الصافي المتاح (${(available-sold).toStringAsFixed(3)} كجم).');
+      return txn.insert('sales', {
+        'invoice':'TP-${DateTime.now().microsecondsSinceEpoch}','customer_id':customerId,
+        'kg':kg,'price':price,'total':total,'paid':paid,'kind':type,'note':note.trim(),
+        'created':DateTime.now().toIso8601String()
+      });
     });
   }
   Future<int> collect(int customerId, int amount, String note) async {
     if (amount <= 0) throw Exception('أدخل مبلغ تحصيل صحيح');
     final db = await database;
-    final saleDue = (await db.rawQuery('SELECT COALESCE(SUM(total-paid),0) AS v FROM sales WHERE customer_id=?',[customerId])).first['v'] as num;
-    final collected = (await db.rawQuery('SELECT COALESCE(SUM(amount),0) AS v FROM collections WHERE customer_id=?',[customerId])).first['v'] as num;
-    if (amount > saleDue - collected) throw Exception('المبلغ أكبر من الرصيد المستحق');
-    return db.insert('collections', {'customer_id':customerId,'amount':amount,'note':note,'created':DateTime.now().toIso8601String()});
+    return db.transaction((txn) async {
+      final saleDue = (await txn.rawQuery('SELECT COALESCE(SUM(total-paid),0) AS v FROM sales WHERE customer_id=?',[customerId])).first['v'] as num;
+      final collected = (await txn.rawQuery('SELECT COALESCE(SUM(amount),0) AS v FROM collections WHERE customer_id=?',[customerId])).first['v'] as num;
+      if (amount > saleDue - collected) throw Exception('المبلغ أكبر من الرصيد المستحق');
+      return txn.insert('collections', {'customer_id':customerId,'amount':amount,'note':note,'created':DateTime.now().toIso8601String()});
+    });
   }
   Future<Map<String,num>> totals() async {
     final db=await database;
@@ -245,15 +251,19 @@ class DB {
   }
   Future<void> deleteSale(int id) async {
     final db = await database;
-    final sale = (await db.query('sales',where:'id=?',whereArgs:[id])).first;
-    final cid = sale['customer_id'];
-    if (cid != null) {
-      final remaining = (await db.rawQuery('SELECT COALESCE(SUM(total-paid),0) v FROM sales WHERE customer_id=?',[cid])).first['v'] as num;
-      final collected = (await db.rawQuery('SELECT COALESCE(SUM(amount),0) v FROM collections WHERE customer_id=?',[cid])).first['v'] as num;
-      final saleOutstanding = (sale['total'] as num) - (sale['paid'] as num);
-      if (collected > remaining - saleOutstanding) throw Exception('لا يمكن حذف الفاتورة؛ توجد تحصيلات لا يمكن ربطها بعد الحذف.');
-    }
-    await db.delete('sales',where:'id=?',whereArgs:[id]);
+    await db.transaction((txn) async {
+      final rows=await txn.query('sales',where:'id=?',whereArgs:[id],limit:1);
+      if(rows.isEmpty) throw Exception('الفاتورة غير موجودة');
+      final sale=rows.first;
+      final cid=sale['customer_id'];
+      if(cid!=null){
+        final remaining=(await txn.rawQuery('SELECT COALESCE(SUM(total-paid),0) v FROM sales WHERE customer_id=?',[cid])).first['v'] as num;
+        final collected=(await txn.rawQuery('SELECT COALESCE(SUM(amount),0) v FROM collections WHERE customer_id=?',[cid])).first['v'] as num;
+        final saleOutstanding=(sale['total'] as num)-(sale['paid'] as num);
+        if(collected>remaining-saleOutstanding) throw Exception('لا يمكن حذف الفاتورة؛ توجد تحصيلات لا يمكن ربطها بعد الحذف.');
+      }
+      await txn.delete('sales',where:'id=?',whereArgs:[id]);
+    });
   }
 }
 void showMessage(BuildContext context, String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(text)));
