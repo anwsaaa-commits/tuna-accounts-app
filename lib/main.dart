@@ -1,4 +1,6 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -9,7 +11,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:permission_handler/permission_handler.dart' as permissions;
-import 'package:arabic_reshaper/arabic_reshaper.dart';
+import 'package:pdf_text_shaper/pdf_text_shaper.dart';
 
 const gold = Color(0xFFD7AF59);
 const dark = Color(0xFF101114);
@@ -24,11 +26,43 @@ Future<void> main() async {
 String money(num value) => '${NumberFormat('#,##0', 'en').format(value)} ر.ي';
 String dateLabel(String value) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime.parse(value));
 
-// The PDF renderer does not shape Arabic joining forms by itself. Shape glyphs
-// while keeping the original logical order; pw.Directionality handles RTL runs.
-String pdfArabic(String value) => ArabicReshaper.instance.reshape(value);
-pw.Widget pdfText(String value, {pw.TextStyle? style, pw.TextAlign? textAlign}) =>
-    pw.Text(pdfArabic(value), style: style, textAlign: textAlign);
+// HarfBuzz shapes Arabic from Unicode using the bundled Noto Naskh font.
+// The font is loaded locally: invoices and reports work without internet access.
+Future<ShapedFont> loadArabicPdfFont() async {
+  final data = await rootBundle.load('assets/fonts/NotoNaskhArabic-Regular.ttf');
+  final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  return ShapedFont.fromBytes(bytes, name: 'Noto Naskh Arabic');
+}
+
+pw.Widget pdfText(
+  String value,
+  ShapedFont font, {
+  double fontSize = 11,
+  pdf.PdfColor? color,
+  ShapedTextAlign align = ShapedTextAlign.end,
+}) => ShapedText(
+  value,
+  style: ShapedTextStyle(
+    font: font,
+    fontSize: fontSize,
+    color: color ?? pdf.PdfColors.black,
+    direction: ShapedTextDirection.auto,
+    align: align,
+    preserveUnicodeText: true,
+  ),
+);
+
+pw.Widget pdfCell(String value, ShapedFont font, {bool header = false}) =>
+    pw.Padding(
+      padding: const pw.EdgeInsets.all(6),
+      child: pdfText(
+        value,
+        font,
+        fontSize: header ? 8.5 : 9,
+        color: header ? pdf.PdfColors.white : pdf.PdfColors.black,
+        align: ShapedTextAlign.center,
+      ),
+    );
 
 class TunaApp extends StatelessWidget {
   const TunaApp({super.key});
@@ -534,46 +568,96 @@ class _InvoicePreviewState extends State<InvoicePreview>{
   @override void initState(){super.initState();loaded=load();}
   Future<void> load()async{client=await DB.instance.customerById(widget.sale['customer_id'] as int?);storeInfo={'shop':await DB.instance.setting('shop','تونة بلس'),'phone':await DB.instance.setting('phone','777521058'),'bank':await DB.instance.setting('bank','254127488'),'owner':await DB.instance.setting('owner','محمد صالح بن صالح علي الخلاقي'),'address':await DB.instance.setting('address','فوه المتضررين بجانب مسجد هائل خلف البريد')};if(mounted)setState((){});}
   String val(String key,String fallback)=>widget.sale[key]?.toString()??fallback;
-  Future<pw.Document> createInvoiceDocument()async{
-    final shop=await DB.instance.setting('shop','تونة بلس');
-    final phone=await DB.instance.setting('phone','777521058');
-    final bank=await DB.instance.setting('bank','254127488');
-    final owner=await DB.instance.setting('owner','محمد صالح بن صالح علي الخلاقي');
-    final address=await DB.instance.setting('address','فوه المتضررين بجانب مسجد هائل خلف البريد');
-    final sale=widget.sale;final total=sale['total'] as num;final paid=sale['paid'] as num;final due=total-paid;
-    final arabicFont=await PdfGoogleFonts.amiriRegular();
-    final arabicBold=await PdfGoogleFonts.amiriBold();
-    final normal=pw.TextStyle(font:arabicFont,fontSize:11);
-    final bold=pw.TextStyle(font:arabicBold,fontSize:14);
-    final doc=pw.Document();
-    doc.addPage(pw.Page(pageFormat:pdf.PdfPageFormat.a4,build:(_)=>pw.Directionality(textDirection:pw.TextDirection.rtl,child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
-      pw.Container(padding:const pw.EdgeInsets.all(16),decoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#161616')),child:pw.Column(children:[
-        pdfText(shop,style:pw.TextStyle(font:arabicBold,color:pdf.PdfColor.fromHex('#D7AF59'),fontSize:24)),
-        pdfText('فاتورة مبيعات • تونة بلس',style:pw.TextStyle(font:arabicFont,color:pdf.PdfColor.fromHex('#D7AF59'),fontSize:12))
-      ])),
-      pw.SizedBox(height:18),
-      pdfText('رقم الفاتورة: ${sale['invoice']}',style:bold,textAlign:pw.TextAlign.right),
-      pdfText('التاريخ: ${(sale['created'] as String).substring(0,16).replaceFirst('T',' ')}',style:normal,textAlign:pw.TextAlign.right),
-      pdfText('العميل: ${client?['name']??'عميل نقدي'}',style:normal,textAlign:pw.TextAlign.right),
-      pw.SizedBox(height:14),
-      pw.TableHelper.fromTextArray(data:[[pdfArabic('الوزن (كجم)'),pdfArabic('سعر الكيلو'),pdfArabic('الإجمالي')],[pdfArabic(sale['kg'].toString()),pdfArabic(money(sale['price'] as num)),pdfArabic(money(total))]],headerStyle:pw.TextStyle(font:arabicBold,fontSize:11),cellStyle:normal),
-      pw.SizedBox(height:16),
-      pdfText('الإجمالي: ${money(total)}',style:bold,textAlign:pw.TextAlign.right),
-      pdfText('المدفوع: ${money(paid)}',style:normal,textAlign:pw.TextAlign.right),
-      pdfText('المتبقي: ${money(due)}',style:bold,textAlign:pw.TextAlign.right),
-      if((sale['note'] as String? ?? '').isNotEmpty)pw.Padding(padding:const pw.EdgeInsets.only(top:10),child:pdfText('ملاحظات: ${sale['note']}',style:normal,textAlign:pw.TextAlign.right)),
-      pw.SizedBox(height:22),pw.Divider(),
-      pdfText('بيانات التحويل البنكي',style:bold,textAlign:pw.TextAlign.right),
-      pdfText('بنك العميقي: $bank',style:normal,textAlign:pw.TextAlign.right),
-      pdfText(owner,style:normal,textAlign:pw.TextAlign.right),
-      pdfText('رقم الهاتف: $phone',style:normal,textAlign:pw.TextAlign.right),
-      pdfText('العنوان: $address',style:normal,textAlign:pw.TextAlign.right),
-      pw.SizedBox(height:18),pw.Center(child:pdfText('شكراً لثقتكم • تونة بلس',style:bold))
-    ]))));
-    return doc;
+  Future<Uint8List> createInvoicePdf() async {
+    final font = await loadArabicPdfFont();
+    try {
+      final shop = await DB.instance.setting('shop', 'تونة بلس');
+      final phone = await DB.instance.setting('phone', '777521058');
+      final bank = await DB.instance.setting('bank', '254127488');
+      final owner = await DB.instance.setting('owner', 'محمد صالح بن صالح علي الخلاقي');
+      final address = await DB.instance.setting('address', 'فوه المتضررين بجانب مسجد هائل خلف البريد');
+      final sale = widget.sale;
+      final total = sale['total'] as num;
+      final paid = sale['paid'] as num;
+      final due = total - paid;
+      final doc = pw.Document();
+
+      doc.addPage(pw.Page(
+        pageFormat: pdf.PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (_) => pw.Directionality(
+          textDirection: pw.TextDirection.rtl,
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              pw.Container(
+                padding: const pw.EdgeInsets.all(16),
+                decoration: pw.BoxDecoration(color: pdf.PdfColor.fromHex('#161616')),
+                child: pw.Column(children: [
+                  pdfText(shop, font, fontSize: 24, color: pdf.PdfColor.fromHex('#D7AF59'), align: ShapedTextAlign.center),
+                  pdfText('فاتورة مبيعات • تونة بلس', font, fontSize: 13, color: pdf.PdfColor.fromHex('#D7AF59'), align: ShapedTextAlign.center),
+                ]),
+              ),
+              pw.SizedBox(height: 18),
+              pdfText('رقم الفاتورة: ${sale['invoice']}', font, fontSize: 12),
+              pdfText('التاريخ: ${(sale['created'] as String).substring(0,16).replaceFirst('T',' ')}', font),
+              pdfText('العميل: ${client?['name'] ?? 'عميل نقدي'}', font),
+              pw.SizedBox(height: 14),
+              pw.Table(
+                border: pw.TableBorder.all(color: pdf.PdfColor.fromHex('#C8B58C'), width: 0.6),
+                children: [
+                  pw.TableRow(
+                    decoration: pw.BoxDecoration(color: pdf.PdfColor.fromHex('#2C2924')),
+                    children: [
+                      pdfCell('الوزن (كجم)', font, header: true),
+                      pdfCell('سعر الكيلو', font, header: true),
+                      pdfCell('الإجمالي', font, header: true),
+                    ],
+                  ),
+                  pw.TableRow(children: [
+                    pdfCell(sale['kg'].toString(), font),
+                    pdfCell(money(sale['price'] as num), font),
+                    pdfCell(money(total), font),
+                  ]),
+                ],
+              ),
+              pw.SizedBox(height: 16),
+              pdfText('الإجمالي: ${money(total)}', font, fontSize: 14),
+              pdfText('المدفوع: ${money(paid)}', font),
+              pdfText('المتبقي: ${money(due)}', font, fontSize: 13),
+              if ((sale['note'] as String? ?? '').isNotEmpty)
+                pw.Padding(
+                  padding: const pw.EdgeInsets.only(top: 10),
+                  child: pdfText('ملاحظات: ${sale['note']}', font),
+                ),
+              pw.SizedBox(height: 22),
+              pw.Divider(),
+              pdfText('بيانات التحويل البنكي', font, fontSize: 14, color: pdf.PdfColor.fromHex('#9A742B')),
+              pdfText('بنك العميقي: $bank', font),
+              pdfText(owner, font),
+              pdfText('رقم الهاتف: $phone', font),
+              pdfText('العنوان: $address', font),
+              pw.SizedBox(height: 18),
+              pdfText('شكراً لثقتكم • تونة بلس', font, fontSize: 13, align: ShapedTextAlign.center),
+            ],
+          ),
+        ),
+      ));
+      return await doc.save();
+    } finally {
+      font.dispose();
+    }
   }
-  Future<void> printInvoice() async { final doc=await createInvoiceDocument(); await Printing.layoutPdf(onLayout:(_)=>doc.save()); }
-  Future<void> shareInvoice() async { final doc=await createInvoiceDocument(); await Printing.sharePdf(bytes:await doc.save(),filename:'TunaPlus-${widget.sale['invoice']}.pdf'); }
+
+  Future<void> printInvoice() async {
+    final bytes = await createInvoicePdf();
+    await Printing.layoutPdf(onLayout: (_) async => bytes);
+  }
+
+  Future<void> shareInvoice() async {
+    final bytes = await createInvoicePdf();
+    await Printing.sharePdf(bytes: bytes, filename: 'TunaPlus-${widget.sale['invoice']}.pdf');
+  }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('فاتورة العميل')),body:SafeArea(child:FutureBuilder<void>(future:loaded,builder:(context,s)=>ListView(padding:const EdgeInsets.fromLTRB(16,16,16,32),children:[
     Card(child:Padding(padding:const EdgeInsets.all(20),child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
       const Center(child:Icon(Icons.set_meal,color:gold,size:46)),
@@ -689,46 +773,104 @@ class _CustomerLedgerState extends State<CustomerLedger>{
 }
 class ReportsPage extends StatelessWidget{
   const ReportsPage({super.key});
-  Future<void> exportPdf()async{
-    final t=await DB.instance.totals(),rows=await DB.instance.sales(),doc=pw.Document();
-    final arabicFont=await PdfGoogleFonts.amiriRegular();
-    final arabicBold=await PdfGoogleFonts.amiriBold();
-    final normal=pw.TextStyle(font:arabicFont,fontSize:10);
-    final bold=pw.TextStyle(font:arabicBold,fontSize:14);
-    final heading=pw.TextStyle(font:arabicBold,fontSize:20,color:pdf.PdfColor.fromHex('#B78B34'));
-    final number=(num? value)=>NumberFormat('#,##0.##','en').format(value??0);
-    doc.addPage(pw.MultiPage(pageFormat:pdf.PdfPageFormat.a4,margin:const pw.EdgeInsets.all(28),header:(ctx)=>pw.Container(alignment:pw.Alignment.centerRight,padding:const pw.EdgeInsets.only(bottom:8),child:pdfText('تونة بلس • تقرير الحسابات',style:heading)),footer:(ctx)=>pw.Container(alignment:pw.Alignment.center,padding:const pw.EdgeInsets.only(top:8),child:pdfText('صفحة ${ctx.pageNumber} من ${ctx.pagesCount}',style:normal)),build:(ctx)=>[
-      pw.Directionality(textDirection:pw.TextDirection.rtl,child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
-        pw.Container(padding:const pw.EdgeInsets.all(12),decoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#F4E8CF'),borderRadius:pw.BorderRadius.circular(8)),child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
-          pdfText('ملخص مالي',style:pw.TextStyle(font:arabicBold,fontSize:15,color:pdf.PdfColor.fromHex('#27221A'))),
-          pw.SizedBox(height:8),
-          pdfText('إجمالي المبيعات: ${number(t['sales'])} ر.ي',style:normal),
-          pdfText('المدفوع في الفواتير: ${number(t['paid'])} ر.ي',style:normal),
-          pdfText('التحصيلات اللاحقة: ${number(t['collections'])} ر.ي',style:normal),
-          pdfText('الديون المتبقية: ${number(t['debt'])} ر.ي',style:normal),
-          pdfText('الوزن المباع: ${number(t['weight'])} كجم',style:normal),
-          pdfText('الربح من المبيعات بعد المصروفات: ${number(t['netProfit'])} ر.ي • ${(t['profitFinal']??0)>0?'نهائي':'غير نهائي بسبب وجود مخزون'}',style:bold),
-          pdfText('المخزون الصافي المتبقي: ${number(t['remainingKg'])} كجم',style:normal),
-          pdfText('قيمة تكلفة المخزون المتبقي: ${number(t['inventoryCost'])} ر.ي',style:normal),
-          pdfText('إجمالي المصروفات المسجلة: ${number(t['expenses'])} ر.ي',style:normal),
-          pdfText('المصروفات المحملة على المبيعات: ${number(t['expensesAllocated'])} ر.ي',style:normal),
-          if((t['unallocatedSoldKg']??0)>0.0001)pdfText('تنبيه: وزن مبيعات غير موزع على المخزون: ${number(t['unallocatedSoldKg']!)} كجم؛ الربح غير محسوب لوجود نقص.',style:pw.TextStyle(font:arabicBold,fontSize:11,color:pdf.PdfColor.fromHex('#B3261E'))),
-        ])),
-        pw.SizedBox(height:14),
-        pdfText('تفاصيل الفواتير',style:pw.TextStyle(font:arabicBold,fontSize:15)),
-        pw.SizedBox(height:8),
-        pw.TableHelper.fromTextArray(
-          headers:['رقم الفاتورة','التاريخ','الوزن كجم','السعر/كجم','الإجمالي','المدفوع'].map(pdfArabic).toList(),
-          data:rows.map((r)=>[r['invoice']??'—',(r['created'] as String).substring(0,10),number(r['kg'] as num),number(r['price'] as num),number(r['total'] as num),number(r['paid'] as num)].map((v)=>pdfArabic(v.toString())).toList()).toList(),
-          headerStyle:pw.TextStyle(font:arabicBold,fontSize:8,color:pdf.PdfColors.white),
-          headerDecoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#2C2924')),
-          cellStyle:pw.TextStyle(font:arabicFont,fontSize:8),
-          cellAlignment:pw.Alignment.center,
-          columnWidths:{0:const pw.FlexColumnWidth(1.6),1:const pw.FlexColumnWidth(1.2),2:const pw.FlexColumnWidth(0.8),3:const pw.FlexColumnWidth(1.0),4:const pw.FlexColumnWidth(1.1),5:const pw.FlexColumnWidth(1.1)},
+  Future<void> exportPdf() async {
+    final totals = await DB.instance.totals();
+    final rows = await DB.instance.sales();
+    final font = await loadArabicPdfFont();
+    try {
+      final number = (num? value) => NumberFormat('#,##0.##', 'en').format(value ?? 0);
+      final tableRows = <pw.TableRow>[
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: pdf.PdfColor.fromHex('#2C2924')),
+          children: [
+            pdfCell('رقم الفاتورة', font, header: true),
+            pdfCell('التاريخ', font, header: true),
+            pdfCell('الوزن كجم', font, header: true),
+            pdfCell('السعر/كجم', font, header: true),
+            pdfCell('الإجمالي', font, header: true),
+            pdfCell('المدفوع', font, header: true),
+          ],
         ),
-      ]))
-    ]));
-    await Printing.layoutPdf(onLayout:(_)=>doc.save());
+        ...rows.map((row) => pw.TableRow(children: [
+          pdfCell(row['invoice']?.toString() ?? '—', font),
+          pdfCell((row['created'] as String).substring(0, 10), font),
+          pdfCell(number(row['kg'] as num), font),
+          pdfCell(number(row['price'] as num), font),
+          pdfCell(number(row['total'] as num), font),
+          pdfCell(number(row['paid'] as num), font),
+        ])),
+      ];
+
+      final doc = pw.Document();
+      doc.addPage(pw.MultiPage(
+        pageFormat: pdf.PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(28),
+        header: (ctx) => pw.Container(
+          alignment: pw.Alignment.centerRight,
+          padding: const pw.EdgeInsets.only(bottom: 8),
+          child: pdfText('تونة بلس • تقرير الحسابات', font, fontSize: 18, color: pdf.PdfColor.fromHex('#B78B34')),
+        ),
+        footer: (ctx) => pw.Container(
+          alignment: pw.Alignment.center,
+          padding: const pw.EdgeInsets.only(top: 8),
+          child: pdfText('صفحة ${ctx.pageNumber} من ${ctx.pagesCount}', font, fontSize: 9, align: ShapedTextAlign.center),
+        ),
+        build: (ctx) => [
+          pw.Directionality(
+            textDirection: pw.TextDirection.rtl,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              children: [
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(12),
+                  decoration: pw.BoxDecoration(
+                    color: pdf.PdfColor.fromHex('#F4E8CF'),
+                    borderRadius: pw.BorderRadius.circular(8),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                    children: [
+                      pdfText('ملخص مالي', font, fontSize: 16, color: pdf.PdfColor.fromHex('#27221A')),
+                      pw.SizedBox(height: 8),
+                      pdfText('إجمالي المبيعات: ${number(totals['sales'])} ر.ي', font),
+                      pdfText('المدفوع في الفواتير: ${number(totals['paid'])} ر.ي', font),
+                      pdfText('التحصيلات اللاحقة: ${number(totals['collections'])} ر.ي', font),
+                      pdfText('الديون المتبقية: ${number(totals['debt'])} ر.ي', font),
+                      pdfText('الوزن المباع: ${number(totals['weight'])} كجم', font),
+                      pdfText('الربح من المبيعات بعد المصروفات: ${number(totals['netProfit'])} ر.ي • ${(totals['profitFinal'] ?? 0) > 0 ? 'نهائي' : 'غير نهائي بسبب وجود مخزون'}', font, fontSize: 12),
+                      pdfText('المخزون الصافي المتبقي: ${number(totals['remainingKg'])} كجم', font),
+                      pdfText('قيمة تكلفة المخزون المتبقي: ${number(totals['inventoryCost'])} ر.ي', font),
+                      pdfText('إجمالي المصروفات المسجلة: ${number(totals['expenses'])} ر.ي', font),
+                      pdfText('المصروفات المحملة على المبيعات: ${number(totals['expensesAllocated'])} ر.ي', font),
+                      if ((totals['unallocatedSoldKg'] ?? 0) > 0.0001)
+                        pdfText('تنبيه: وزن مبيعات غير موزع على المخزون: ${number(totals['unallocatedSoldKg']!)} كجم؛ الربح غير محسوب لوجود نقص.', font, fontSize: 11, color: pdf.PdfColor.fromHex('#B3261E')),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 14),
+                pdfText('تفاصيل الفواتير', font, fontSize: 15),
+                pw.SizedBox(height: 8),
+                pw.Table(
+                  border: pw.TableBorder.all(color: pdf.PdfColor.fromHex('#D6C6A5'), width: 0.4),
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(1.6),
+                    1: const pw.FlexColumnWidth(1.2),
+                    2: const pw.FlexColumnWidth(0.8),
+                    3: const pw.FlexColumnWidth(1.0),
+                    4: const pw.FlexColumnWidth(1.1),
+                    5: const pw.FlexColumnWidth(1.1),
+                  },
+                  children: tableRows,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ));
+      await Printing.layoutPdf(onLayout: (_) async => await doc.save());
+    } finally {
+      font.dispose();
+    }
   }
   @override Widget build(BuildContext context) {
     return FutureBuilder<Map<String, num>>(
@@ -779,14 +921,144 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
   @override void initState(){super.initState();entries=DB.instance.privateBatches();expenseEntries=DB.instance.expenses();}
   void reloadEntries(){entries=DB.instance.privateBatches();expenseEntries=DB.instance.expenses();}
   Future<void> addEntry() async {
-    final gross=TextEditingController(),price=TextEditingController(),net=TextEditingController(),note=TextEditingController();
-    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('تسجيل شراء تونة (خاص)'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-      TextField(controller:gross,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الإجمالي عند الشراء (كجم)')),
-      TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'تكلفة شراء الكيلو (ريال)')),
-      TextField(controller:net,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الصافي بعد التقطيع (كجم)')),
-      TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظة (اختياري)')),
-      const SizedBox(height:8),const Text('هذه البيانات خاصة ولا تظهر في فواتير العملاء أو كشوفهم.')
-    ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addPrivateBatch(double.parse(gross.text),int.parse(price.text),double.parse(net.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ'))]));
+    final gross = TextEditingController();
+    final price = TextEditingController();
+    final net = TextEditingController();
+    final note = TextEditingController();
+    final grossFocus = FocusNode();
+    final priceFocus = FocusNode();
+    final netFocus = FocusNode();
+    final noteFocus = FocusNode();
+
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) {
+          final media = MediaQuery.of(ctx);
+          final availableHeight = media.size.height - media.viewInsets.bottom - 40;
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: availableHeight > 160 ? availableHeight : media.size.height * 0.7,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'تسجيل شراء تونة (خاص)',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: gold, fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: gross,
+                      focusNode: grossFocus,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => FocusScope.of(ctx).requestFocus(priceFocus),
+                      decoration: const InputDecoration(
+                        labelText: 'الوزن الإجمالي عند الشراء (كجم)',
+                        prefixIcon: Icon(Icons.scale),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: price,
+                      focusNode: priceFocus,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => FocusScope.of(ctx).requestFocus(netFocus),
+                      decoration: const InputDecoration(
+                        labelText: 'تكلفة شراء الكيلو (ريال)',
+                        prefixIcon: Icon(Icons.payments),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: net,
+                      focusNode: netFocus,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => FocusScope.of(ctx).requestFocus(noteFocus),
+                      decoration: const InputDecoration(
+                        labelText: 'الوزن الصافي بعد التقطيع (كجم)',
+                        prefixIcon: Icon(Icons.inventory_2),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: note,
+                      focusNode: noteFocus,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => FocusScope.of(ctx).unfocus(),
+                      decoration: const InputDecoration(
+                        labelText: 'ملاحظة (اختياري)',
+                        prefixIcon: Icon(Icons.notes),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'هذه البيانات خاصة ولا تظهر في فواتير العملاء أو كشوفهم.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: Colors.white70),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('إلغاء'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton.icon(
+                            icon: const Icon(Icons.save),
+                            onPressed: () async {
+                              try {
+                                await DB.instance.addPrivateBatch(
+                                  double.parse(gross.text.trim()),
+                                  int.parse(price.text.trim()),
+                                  double.parse(net.text.trim()),
+                                  note.text,
+                                );
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                if (mounted) setState(reloadEntries);
+                              } catch (e) {
+                                showMessage(ctx, e.toString().replaceFirst('Exception: ', ''));
+                              }
+                            },
+                            label: const Text('حفظ الشراء'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } finally {
+      gross.dispose();
+      price.dispose();
+      net.dispose();
+      note.dispose();
+      grossFocus.dispose();
+      priceFocus.dispose();
+      netFocus.dispose();
+      noteFocus.dispose();
+    }
   }
   Future<void> editEntry(Map<String,Object?> row)async{
     final gross=TextEditingController(text:(row['gross_kg'] as num).toString());

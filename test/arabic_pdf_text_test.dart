@@ -1,19 +1,25 @@
-import 'package:arabic_reshaper/arabic_reshaper.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pdf_text_shaper/pdf_text_shaper.dart';
 
 void main() {
-  group('Arabic PDF text shaping', () {
-    test('converts Arabic letters to connected presentation forms', () {
-      const source = 'السلام عليكم';
-      final shaped = ArabicReshaper.instance.reshape(source);
-      expect(shaped, isNot(source));
-      expect(shaped, contains('ﻟ'));
-    });
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-    test('keeps invoice digits intact while shaping Arabic labels', () {
-      final shaped = ArabicReshaper.instance.reshape('فاتورة 12345');
-      expect(shaped, contains('12345'));
-      expect(shaped, isNot('فاتورة 12345'));
-    });
+  test('bundled Noto Naskh font supports Arabic PDF labels and digits', () async {
+    final data = await rootBundle.load('assets/fonts/NotoNaskhArabic-Regular.ttf');
+    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final font = ShapedFont.fromBytes(bytes, name: 'Noto Naskh Arabic');
+
+    try {
+      const sample = 'السلام عليكم فاتورة 12345 ريال';
+      final diagnostics = ShapedFontDiagnostics(font);
+      expect(
+        diagnostics.supports(sample),
+        isTrue,
+        reason: diagnostics.report(sample),
+      );
+    } finally {
+      font.dispose();
+    }
   });
 }
