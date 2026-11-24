@@ -45,7 +45,7 @@ pw.Widget pdfText(
   ShapedTextAlign align = ShapedTextAlign.end,
 }) => ShapedText(
   // Normalize unsupported decorative bullets before shaping text with the Arabic font.
-  value.replaceAll('•', '-'),
+  value.replaceAll('•', '،').replaceAll('-', ' '),
   style: ShapedTextStyle(
     font: font,
     fontSize: fontSize,
