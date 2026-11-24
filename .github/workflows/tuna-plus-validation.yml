@@ -5,6 +5,7 @@ on:
       - tuna-plus-1.1.3-fixes
       - tuna-plus-1.1.4-fixes
       - tuna-plus-1.1.6-fixes
+      - tuna-plus-1.1.7-pdf-fix
   workflow_dispatch:
 permissions:
   contents: read
