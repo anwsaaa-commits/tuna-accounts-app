@@ -121,7 +121,7 @@ class DB {
     final purchaseCost=batches.fold<num>(0,(sum,b)=>sum+(b['total_cost'] as num));
     final soldKg=s['weight'] as num;
     var remainingByBatch=batches.map((b)=>(b['net_kg'] as num).toDouble()).toList();
-    var costOfSold=0.0,inventoryCost=0.0;
+    var costOfSold=0.0,inventoryCost=0.0,unallocatedSoldKg=0.0;
     final unitCosts=batches.map((b){
       final net=(b['net_kg'] as num).toDouble();
       return net>0?(b['total_cost'] as num).toDouble()/net:0.0;
@@ -129,12 +129,15 @@ class DB {
     for(final sale in sales){
       var qty=(sale['kg'] as num).toDouble();
       for(int i=0;i<remainingByBatch.length&&qty>0.000001;i++){
-        final take=qty<remainingByBatch[i]?qty:remainingByBatch[i];
+        final available=remainingByBatch[i]>0?remainingByBatch[i]:0.0;
+        final take=qty<available?qty:available;
         if(take<=0)continue;
         costOfSold+=take*unitCosts[i];
         remainingByBatch[i]-=take;
         qty-=take;
       }
+      // Track historic sold weight that cannot be assigned to available stock.
+      if(qty>0.000001)unallocatedSoldKg+=qty;
     }
     for(int i=0;i<remainingByBatch.length;i++){
       inventoryCost+=remainingByBatch[i]>0?remainingByBatch[i]*unitCosts[i]:0;
@@ -144,7 +147,7 @@ class DB {
     final expensesAllocated=stockNetKg>0?expenseTotal*(soldKg/stockNetKg).clamp(0,1):0.0;
     final netProfit=(s['total'] as num)-costOfSold-expensesAllocated;
     final finalProfit=stockNetKg>0&&remainingKg<=0.0001;
-    return {'sales':s['total'] as num,'paid':s['paid'] as num,'weight':soldKg,'collections':c,'debt':due-c,'purchaseCost':purchaseCost,'costPerKg':costPerNetKg,'costOfSold':costOfSold,'inventoryCost':inventoryCost,'stockNetKg':stockNetKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':expensesAllocated,'netProfit':netProfit,'profitFinal':finalProfit?1:0};
+    return {'sales':s['total'] as num,'paid':s['paid'] as num,'weight':soldKg,'collections':c,'debt':due-c,'purchaseCost':purchaseCost,'costPerKg':costPerNetKg,'costOfSold':costOfSold,'inventoryCost':inventoryCost,'stockNetKg':stockNetKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':expensesAllocated,'netProfit':unallocatedSoldKg>0.0001?0:netProfit,'unallocatedSoldKg':unallocatedSoldKg,'profitReliable':unallocatedSoldKg<=0.0001?1:0,'profitFinal':finalProfit&&unallocatedSoldKg<=0.0001?1:0};
   }
   Future<List<Map<String,Object?>>> reservations() async => (await database).query('reservations',orderBy:'created DESC');
   Future<int> addReservation(String name,String phone,double kg,int price,int deposit,String note) async {
@@ -300,7 +303,7 @@ class _DashboardState extends State<Dashboard> {
       metric('مدفوع الفواتير',money(s.data?['paid']??0),Icons.payments),
       metric('الرصيد المستحق',money(s.data?['debt']??0),Icons.account_balance),
       metric('الوزن المباع','${(s.data?['weight']??0).toStringAsFixed(3)} كجم',Icons.scale),
-      metric((s.data?['profitFinal']??0)>0?'صافي الربح النهائي':'الربح من المبيعات (غير نهائي)',money(s.data?['netProfit']??0),Icons.trending_up),
+      metric((s.data?['profitReliable']??1)<=0?'الربح غير محسوب (نقص مخزون)':((s.data?['profitFinal']??0)>0?'صافي الربح النهائي':'الربح من المبيعات (غير نهائي)'),money(s.data?['netProfit']??0),Icons.trending_up),
     ]),
     const SizedBox(height:12),
     FilledButton.icon(onPressed:()=>newSale(context).then((_)=>setState(()=>data=DB.instance.totals())),icon:const Icon(Icons.add),label:const Text('بيع جديد')),
@@ -688,7 +691,7 @@ class ReportsPage extends StatelessWidget{
           'collections': 'التحصيلات',
           'debt': 'الديون القائمة',
           'weight': 'الوزن المباع',
-          'netProfit': (totals['profitFinal']??0)>0 ? 'صافي الربح النهائي' : 'الربح من المبيعات (غير نهائي)',
+          'netProfit': (totals['profitReliable']??1)<=0 ? 'الربح غير موثوق (نقص مخزون)' : ((totals['profitFinal']??0)>0 ? 'صافي الربح النهائي' : 'الربح من المبيعات (غير نهائي)'),
           'remainingKg':'المخزون الصافي المتبقي',
           'inventoryCost':'تكلفة المخزون المتبقي',
           'expenses':'إجمالي المصروفات',
