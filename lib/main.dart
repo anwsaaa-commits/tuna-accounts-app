@@ -228,8 +228,12 @@ class DB {
     final expenses=expenseRows.fold<num>(0,(sum,e)=>sum+(e['amount'] as num));
     final expenseShare=totalNetStock>0?expenses*(soldKg/totalNetStock):0.0;
     final costOfSold=soldKg*unitCost;
-    final remainingKg=netKg-soldKg;
-    return {'batch':batch,'netKg':netKg,'cost':totalCost,'unitCost':unitCost,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseShare,'profit':revenue-costOfSold-expenseShare,'expenseTotal':expenses,'unallocatedSoldKg':unallocatedSoldKg,'allocations':allocatedSales};
+    final remainingKg=(netKg-soldKg).clamp(0.0,netKg);
+    final profitReliable=unallocatedSoldKg<=0.0001;
+    // Do not display a profit figure that could be misleading when any historical
+    // sale cannot be allocated to purchase stock.
+    final safeProfit=profitReliable?revenue-costOfSold-expenseShare:0.0;
+    return {'batch':batch,'netKg':netKg,'cost':totalCost,'unitCost':unitCost,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseShare,'profit':safeProfit,'profitReliable':profitReliable,'expenseTotal':expenses,'unallocatedSoldKg':unallocatedSoldKg,'allocations':allocatedSales};
   }
   Future<void> updatePrivateBatch(int id,double grossKg,int purchasePrice,double netKg,String note) async {
     if(!grossKg.isFinite || grossKg<=0 || purchasePrice<=0 || !netKg.isFinite || netKg<=0 || netKg>grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
@@ -819,7 +823,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
           Text('إيرادات المبيعات الموزعة: ${money(report['revenue'] as num)}'),
           Text('تكلفة وزن المباع: ${money(report['costOfSold'] as num)}'),
           Text('حصة المصروفات العامة: ${money(report['expenseShare'] as num)}'),
-          Text('الربح الصافي التقريبي: ${money(report['profit'] as num)}',style:const TextStyle(color:gold,fontWeight:FontWeight.bold)),
+          Text((report['profitReliable'] as bool? ?? false)?'الربح الصافي التقريبي: ${money(report['profit'] as num)}':'الربح غير محسوب لوجود نقص في توزيع المخزون',style:TextStyle(color:(report['profitReliable'] as bool? ?? false)?gold:Colors.orange,fontWeight:FontWeight.bold)),
           const SizedBox(height:10),
           const Text('تفصيل المبيعات الموزعة على الشحنة',style:TextStyle(fontWeight:FontWeight.bold)),
           if(allocations.isEmpty)const Text('لم تُوزع مبيعات على هذه الشحنة بعد.'),
