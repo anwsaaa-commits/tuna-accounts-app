@@ -8,6 +8,7 @@ import 'package:pdf/pdf.dart' as pdf;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:permission_handler/permission_handler.dart' as permissions;
 
 const gold = Color(0xFFD7AF59);
 const dark = Color(0xFF101114);
@@ -301,13 +302,13 @@ class _AppShellState extends State<AppShell> {
       appBar: AppBar(title:Text(const ['الرئيسية','الفواتير','العملاء','التقارير'][selected]),actions:[
         IconButton(icon:const Icon(Icons.settings),onPressed:()async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>const SettingsPage()));if(mounted)refreshAll();})
       ]),
-      body:pages[selected],
-      bottomNavigationBar:NavigationBar(selectedIndex:selected,onDestinationSelected:(v)=>setState(()=>selected=v),backgroundColor:panel,indicatorColor:gold.withValues(alpha:0.18),destinations:const [
+      body:SafeArea(top:false,child:pages[selected]),
+      bottomNavigationBar:SafeArea(top:false,child:NavigationBar(selectedIndex:selected,onDestinationSelected:(v)=>setState(()=>selected=v),backgroundColor:panel,indicatorColor:gold.withValues(alpha:0.18),destinations:const [
         NavigationDestination(icon:Icon(Icons.home),label:'الرئيسية'),
         NavigationDestination(icon:Icon(Icons.receipt_long),label:'فواتير'),
         NavigationDestination(icon:Icon(Icons.people),label:'عملاء'),
         NavigationDestination(icon:Icon(Icons.bar_chart),label:'تقارير'),
-      ]),
+      ])),
     );
   }
 }
@@ -351,8 +352,22 @@ Future<void> newCustomer(BuildContext context) async {
     // Keep the user informed while the native permission prompt or contact query is running.
     bool loadingDialogOpen=false;
     try {
-      final allowed=await FlutterContacts.requestPermission();
-      if(!allowed){if(dialogContext.mounted)showMessage(dialogContext,'لم يتم منح إذن جهات الاتصال');return;}
+      var contactPermission=await permissions.Permission.contacts.status;
+      if(!contactPermission.isGranted){contactPermission=await permissions.Permission.contacts.request();}
+      if(!contactPermission.isGranted){
+        if(dialogContext.mounted){
+          if(contactPermission.isPermanentlyDenied){
+            await showDialog<void>(context:dialogContext,builder:(permissionContext)=>AlertDialog(
+              title:const Text('إذن جهات الاتصال مطلوب'),
+              content:const Text('تم رفض الإذن نهائياً. افتح إعدادات التطبيق واسمح بالوصول إلى جهات الاتصال، ثم أعد المحاولة.'),
+              actions:[TextButton(onPressed:()=>Navigator.pop(permissionContext),child:const Text('لاحقاً')),FilledButton(onPressed:()async{Navigator.pop(permissionContext);await permissions.openAppSettings();},child:const Text('فتح الإعدادات'))],
+            ));
+          }else{
+            showMessage(dialogContext,'لم يتم منح إذن جهات الاتصال. يمكنك المحاولة مرة أخرى.');
+          }
+        }
+        return;
+      }
       if(!dialogContext.mounted)return;
       loadingDialogOpen=true;
       showDialog<void>(context:dialogContext,barrierDismissible:false,builder:(loadingContext)=>const AlertDialog(
@@ -550,7 +565,7 @@ class _InvoicePreviewState extends State<InvoicePreview>{
   }
   Future<void> printInvoice() async { final doc=await createInvoiceDocument(); await Printing.layoutPdf(onLayout:(_)=>doc.save()); }
   Future<void> shareInvoice() async { final doc=await createInvoiceDocument(); await Printing.sharePdf(bytes:await doc.save(),filename:'TunaPlus-${widget.sale['invoice']}.pdf'); }
-  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('فاتورة العميل')),body:FutureBuilder<void>(future:loaded,builder:(context,s)=>ListView(padding:const EdgeInsets.all(16),children:[
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('فاتورة العميل')),body:SafeArea(child:FutureBuilder<void>(future:loaded,builder:(context,s)=>ListView(padding:const EdgeInsets.fromLTRB(16,16,16,32),children:[
     Card(child:Padding(padding:const EdgeInsets.all(20),child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
       const Center(child:Icon(Icons.set_meal,color:gold,size:46)),
       Center(child:Text('تونة بلس',style:Theme.of(context).textTheme.headlineMedium?.copyWith(color:gold,fontWeight:FontWeight.bold))),
@@ -574,9 +589,9 @@ class _InvoicePreviewState extends State<InvoicePreview>{
       Text(storeInfo['address']??'فوه المتضررين بجانب مسجد هائل خلف البريد'),
       const SizedBox(height:12),const Center(child:Text('شكراً لثقتكم • تونة بلس',style:TextStyle(color:gold))),
     ]))),
-    FilledButton.icon(onPressed:printInvoice,icon:const Icon(Icons.picture_as_pdf),label:const Text('طباعة / حفظ الفاتورة PDF')),
-    OutlinedButton.icon(onPressed:shareInvoice,icon:const Icon(Icons.share),label:const Text('مشاركة الفاتورة للعميل')),
-  ])));
+    FilledButton.icon(style:FilledButton.styleFrom(minimumSize:const Size.fromHeight(52),padding:const EdgeInsets.symmetric(horizontal:18,vertical:14)),onPressed:printInvoice,icon:const Icon(Icons.picture_as_pdf),label:const Text('طباعة / حفظ الفاتورة PDF')),
+    OutlinedButton.icon(style:OutlinedButton.styleFrom(minimumSize:const Size.fromHeight(52),padding:const EdgeInsets.symmetric(horizontal:18,vertical:14),side:const BorderSide(color:gold,width:1.4)),onPressed:shareInvoice,icon:const Icon(Icons.share),label:const Text('مشاركة الفاتورة للعميل')),
+  ]))));
 }
 Widget _invoiceRow(String label,String value,{bool strong=false})=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[Text(label,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null),Flexible(child:Text(value,textAlign:TextAlign.end,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null))]));
 class CustomersPage extends StatefulWidget{const CustomersPage({super.key});@override State<CustomersPage> createState()=>_CustomersPageState();}
