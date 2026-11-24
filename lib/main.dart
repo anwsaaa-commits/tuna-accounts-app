@@ -663,6 +663,7 @@ class ReportsPage extends StatelessWidget{
           pw.Text('قيمة تكلفة المخزون المتبقي: ${number(t['inventoryCost'])} ر.ي',style:normal),
           pw.Text('إجمالي المصروفات المسجلة: ${number(t['expenses'])} ر.ي',style:normal),
           pw.Text('المصروفات المحملة على المبيعات: ${number(t['expensesAllocated'])} ر.ي',style:normal),
+          if((t['unallocatedSoldKg']??0)>0.0001)pw.Text('تنبيه: وزن مبيعات غير موزع على المخزون: ${number(t['unallocatedSoldKg']!)} كجم؛ الربح غير محسوب لوجود نقص.',style:pw.TextStyle(font:arabicBold,fontSize:11,color:pdf.PdfColor.fromHex('#B3261E'))),
         ])),
         pw.SizedBox(height:14),
         pw.Text('تفاصيل الفواتير',style:pw.TextStyle(font:arabicBold,fontSize:15)),
@@ -706,7 +707,7 @@ class ReportsPage extends StatelessWidget{
             ...labels.entries.map((entry) => Card(
               child: ListTile(
                 title: Text(entry.value),
-                trailing: Text(entry.key=='weight'||entry.key=='remainingKg'
+                trailing: Text(entry.key=='weight'||entry.key=='remainingKg'||entry.key=='unallocatedSoldKg'
                     ? '${totals[entry.key]!.toStringAsFixed(3)} كجم'
                     : money(totals[entry.key]!)),
               ),
