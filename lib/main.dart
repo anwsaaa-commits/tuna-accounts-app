@@ -28,7 +28,7 @@ String dateLabel(String value) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime
 // while keeping the original logical order; pw.Directionality handles RTL runs.
 String pdfArabic(String value) => ArabicReshaper.instance.reshape(value);
 pw.Widget pdfText(String value, {pw.TextStyle? style, pw.TextAlign? textAlign}) =>
-    pdfText(pdfArabic(value), style: style, textAlign: textAlign);
+    pw.Text(pdfArabic(value), style: style, textAlign: textAlign);
 
 class TunaApp extends StatelessWidget {
   const TunaApp({super.key});
