@@ -542,10 +542,31 @@ class _ReservationsPageState extends State<ReservationsPage> {
     final activeCount=active.length;
     if(s.data!.isEmpty)return const Center(child:Text('لا توجد حجوزات حتى الآن'));
     return ListView(padding:const EdgeInsets.all(12),children:[
-      Card(color:gold.withValues(alpha:0.12),child:Padding(padding:const EdgeInsets.all(16),child:Row(children:[
-        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('إجمالي الكميات المحجوزة القادمة',style:TextStyle(fontWeight:FontWeight.bold)),Text('${activeKg.toStringAsFixed(3)} كجم',style:const TextStyle(fontSize:22,color:gold,fontWeight:FontWeight.bold)))])),
-        Column(children:[const Text('الحجوزات النشطة'),Text('$activeCount',style:const TextStyle(color:gold,fontWeight:FontWeight.bold,fontSize:18))])
-      ]))),
+      Card(
+        color: gold.withValues(alpha: 0.12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('إجمالي الكميات المحجوزة القادمة', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text('${activeKg.toStringAsFixed(3)} كجم', style: const TextStyle(fontSize: 22, color: gold, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+              Column(
+                children: [
+                  const Text('الحجوزات النشطة'),
+                  Text('$activeCount', style: const TextStyle(color: gold, fontWeight: FontWeight.bold, fontSize: 18)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
       ...s.data!.map((r)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
         Text(r['customer_name'] as String,style:const TextStyle(color:gold,fontWeight:FontWeight.bold,fontSize:17)),
         Text('الهاتف: ${r['phone']??'—'}'),
