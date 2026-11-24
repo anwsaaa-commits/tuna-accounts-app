@@ -359,9 +359,11 @@ Future<void> newCustomer(BuildContext context) async {
     // Keep the user informed while the native permission prompt or contact query is running.
     bool loadingDialogOpen=false;
     try {
-      var contactPermission=await permissions.Permission.contacts.status;
-      if(!contactPermission.isGranted){contactPermission=await permissions.Permission.contacts.request();}
-      if(!contactPermission.isGranted){
+      // Use the contacts plugin's own permission request before querying its native API.
+      // This keeps the permission flow aligned with the exact plugin that reads the address book.
+      final pluginPermissionGranted=await FlutterContacts.requestPermission(readonly:true);
+      final contactPermission=await permissions.Permission.contacts.status;
+      if(!pluginPermissionGranted || !contactPermission.isGranted){
         if(dialogContext.mounted){
           if(contactPermission.isPermanentlyDenied){
             await showDialog<void>(context:dialogContext,builder:(permissionContext)=>AlertDialog(
