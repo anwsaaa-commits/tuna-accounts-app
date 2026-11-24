@@ -564,7 +564,7 @@ class _InvoicePageState extends State<InvoicePage>{
 
 class InvoicePreview extends StatefulWidget{const InvoicePreview({super.key,required this.sale});final Map<String,Object?> sale;@override State<InvoicePreview> createState()=>_InvoicePreviewState();}
 class _InvoicePreviewState extends State<InvoicePreview>{
-  Map<String,Object?>? client;Map<String,String> storeInfo={};late Future<void> loaded;
+  Map<String,Object?>? client;Map<String,String> storeInfo={};late Future<void> loaded;bool pdfBusy=false;
   @override void initState(){super.initState();loaded=load();}
   Future<void> load()async{client=await DB.instance.customerById(widget.sale['customer_id'] as int?);storeInfo={'shop':await DB.instance.setting('shop','تونة بلس'),'phone':await DB.instance.setting('phone','777521058'),'bank':await DB.instance.setting('bank','254127488'),'owner':await DB.instance.setting('owner','محمد صالح بن صالح علي الخلاقي'),'address':await DB.instance.setting('address','فوه المتضررين بجانب مسجد هائل خلف البريد')};if(mounted)setState((){});}
   String val(String key,String fallback)=>widget.sale[key]?.toString()??fallback;
@@ -650,13 +650,30 @@ class _InvoicePreviewState extends State<InvoicePreview>{
   }
 
   Future<void> printInvoice() async {
-    final bytes = await createInvoicePdf();
-    await Printing.layoutPdf(onLayout: (_) async => bytes);
+    if(pdfBusy)return;
+    setState(()=>pdfBusy=true);
+    try {
+      final bytes = await createInvoicePdf();
+      final printed = await Printing.layoutPdf(onLayout: (_) async => bytes);
+      if(mounted && !printed) showMessage(context,'لم يتم فتح الطباعة. تحقق من وجود تطبيق طباعة PDF على الهاتف.');
+    } catch(e) {
+      if(mounted) showMessage(context,'تعذر إنشاء PDF: ${e.toString().replaceFirst('Exception: ','')}');
+    } finally {
+      if(mounted)setState(()=>pdfBusy=false);
+    }
   }
 
   Future<void> shareInvoice() async {
-    final bytes = await createInvoicePdf();
-    await Printing.sharePdf(bytes: bytes, filename: 'TunaPlus-${widget.sale['invoice']}.pdf');
+    if(pdfBusy)return;
+    setState(()=>pdfBusy=true);
+    try {
+      final bytes = await createInvoicePdf();
+      await Printing.sharePdf(bytes: bytes, filename: 'TunaPlus-${widget.sale['invoice']}.pdf');
+    } catch(e) {
+      if(mounted) showMessage(context,'تعذر مشاركة PDF: ${e.toString().replaceFirst('Exception: ','')}');
+    } finally {
+      if(mounted)setState(()=>pdfBusy=false);
+    }
   }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('فاتورة العميل')),body:SafeArea(child:FutureBuilder<void>(future:loaded,builder:(context,s)=>ListView(padding:const EdgeInsets.fromLTRB(16,16,16,32),children:[
     Card(child:Padding(padding:const EdgeInsets.all(20),child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
@@ -682,8 +699,8 @@ class _InvoicePreviewState extends State<InvoicePreview>{
       Text(storeInfo['address']??'فوه المتضررين بجانب مسجد هائل خلف البريد'),
       const SizedBox(height:12),const Center(child:Text('شكراً لثقتكم • تونة بلس',style:TextStyle(color:gold))),
     ]))),
-    FilledButton.icon(style:FilledButton.styleFrom(minimumSize:const Size.fromHeight(52),padding:const EdgeInsets.symmetric(horizontal:18,vertical:14)),onPressed:printInvoice,icon:const Icon(Icons.picture_as_pdf),label:const Text('طباعة / حفظ الفاتورة PDF')),
-    OutlinedButton.icon(style:OutlinedButton.styleFrom(minimumSize:const Size.fromHeight(52),padding:const EdgeInsets.symmetric(horizontal:18,vertical:14),side:const BorderSide(color:gold,width:1.4)),onPressed:shareInvoice,icon:const Icon(Icons.share),label:const Text('مشاركة الفاتورة للعميل')),
+    FilledButton.icon(style:FilledButton.styleFrom(minimumSize:const Size.fromHeight(52),padding:const EdgeInsets.symmetric(horizontal:18,vertical:14)),onPressed:pdfBusy?null:printInvoice,icon:pdfBusy?const SizedBox(width:20,height:20,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.picture_as_pdf),label:Text(pdfBusy?'جارٍ تجهيز PDF...':'طباعة / حفظ الفاتورة PDF')),
+    OutlinedButton.icon(style:OutlinedButton.styleFrom(minimumSize:const Size.fromHeight(52),padding:const EdgeInsets.symmetric(horizontal:18,vertical:14),side:const BorderSide(color:gold,width:1.4)),onPressed:pdfBusy?null:shareInvoice,icon:const Icon(Icons.share),label:const Text('مشاركة الفاتورة للعميل')),
   ]))));
 }
 Widget _invoiceRow(String label,String value,{bool strong=false})=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[Text(label,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null),Flexible(child:Text(value,textAlign:TextAlign.end,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null))]));
@@ -773,7 +790,8 @@ class _CustomerLedgerState extends State<CustomerLedger>{
 }
 class ReportsPage extends StatelessWidget{
   const ReportsPage({super.key});
-  Future<void> exportPdf() async {
+  Future<void> exportPdf(BuildContext context) async {
+    try {
     final totals = await DB.instance.totals();
     final rows = await DB.instance.sales();
     final font = await loadArabicPdfFont();
@@ -871,6 +889,9 @@ class ReportsPage extends StatelessWidget{
     } finally {
       font.dispose();
     }
+    } catch(e) {
+      showMessage(context,'تعذر إنشاء تقرير PDF: ${e.toString().replaceFirst('Exception: ','')}');
+    }
   }
   @override Widget build(BuildContext context) {
     return FutureBuilder<Map<String, num>>(
@@ -904,7 +925,7 @@ class ReportsPage extends StatelessWidget{
               ),
             )),
             FilledButton.icon(
-              onPressed: exportPdf,
+              onPressed: () => exportPdf(context),
               icon: const Icon(Icons.picture_as_pdf),
               label: const Text('تصدير تقرير PDF'),
             ),
@@ -1177,7 +1198,7 @@ class _SettingsPageState extends State<SettingsPage>{
   @override void initState(){super.initState();load();}
   Future<void> load()async{store.text=await DB.instance.setting('shop','تونة بلس');phone.text=await DB.instance.setting('phone','777521058');price.text=await DB.instance.setting('price','6500');bank.text=await DB.instance.setting('bank','254127488');owner.text=await DB.instance.setting('owner','محمد صالح بن صالح علي الخلاقي');address.text=await DB.instance.setting('address','فوه المتضررين بجانب مسجد هائل خلف البريد');}
   Future<void> save()async{await DB.instance.setSetting('shop',store.text);await DB.instance.setSetting('phone',phone.text);await DB.instance.setSetting('price',price.text);await DB.instance.setSetting('bank',bank.text);await DB.instance.setSetting('owner',owner.text);await DB.instance.setSetting('address',address.text);if(mounted){showMessage(context,'تم حفظ الإعدادات');Navigator.pop(context);}}
-  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('إعدادات المتجر')),body:ListView(padding:const EdgeInsets.all(16),children:[
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('إعدادات المتجر')),body:SafeArea(child:ListView(padding:const EdgeInsets.fromLTRB(16,16,16,48),children:[
     TextField(controller:store,decoration:const InputDecoration(labelText:'اسم المتجر')),
     TextField(controller:phone,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'رقم التواصل')),
     TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو الافتراضي (قابل للتغيير عند كل بيع)')),
@@ -1185,6 +1206,6 @@ class _SettingsPageState extends State<SettingsPage>{
     TextField(controller:bank,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'رقم الحساب البنكي')),
     TextField(controller:owner,decoration:const InputDecoration(labelText:'اسم صاحب الحساب')),
     TextField(controller:address,maxLines:2,decoration:const InputDecoration(labelText:'عنوان المتجر')),
-    const SizedBox(height:20),OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const PrivateCostPage())),icon:const Icon(Icons.lock),label:const Text('حسابات الشراء الخاصة (لا تظهر للزبائن)')),const SizedBox(height:12),FilledButton(onPressed:save,child:const Text('حفظ'))
-  ]));
+    const SizedBox(height:20),OutlinedButton.icon(style:OutlinedButton.styleFrom(minimumSize:const Size.fromHeight(52),padding:const EdgeInsets.symmetric(horizontal:12,vertical:14)),onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const PrivateCostPage())),icon:const Icon(Icons.lock),label:const Text('حسابات الشراء الخاصة (لا تظهر للزبائن)')),const SizedBox(height:12),FilledButton(style:FilledButton.styleFrom(minimumSize:const Size.fromHeight(52)),onPressed:save,child:const Text('حفظ'))
+  ])));
 }
