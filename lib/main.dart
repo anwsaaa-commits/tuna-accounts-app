@@ -9,6 +9,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:permission_handler/permission_handler.dart' as permissions;
+import 'package:arabic_reshaper/arabic_reshaper.dart';
 
 const gold = Color(0xFFD7AF59);
 const dark = Color(0xFF101114);
@@ -22,6 +23,12 @@ Future<void> main() async {
 }
 String money(num value) => '${NumberFormat('#,##0', 'en').format(value)} ر.ي';
 String dateLabel(String value) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime.parse(value));
+
+// The PDF renderer does not shape Arabic joining forms by itself. Shape glyphs
+// while keeping the original logical order; pw.Directionality handles RTL runs.
+String pdfArabic(String value) => ArabicReshaper.instance.reshape(value);
+pw.Widget pdfText(String value, {pw.TextStyle? style, pw.TextAlign? textAlign}) =>
+    pdfText(pdfArabic(value), style: style, textAlign: textAlign);
 
 class TunaApp extends StatelessWidget {
   const TunaApp({super.key});
@@ -539,27 +546,27 @@ class _InvoicePreviewState extends State<InvoicePreview>{
     final doc=pw.Document();
     doc.addPage(pw.Page(pageFormat:pdf.PdfPageFormat.a4,build:(_)=>pw.Directionality(textDirection:pw.TextDirection.rtl,child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
       pw.Container(padding:const pw.EdgeInsets.all(16),decoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#161616')),child:pw.Column(children:[
-        pw.Text(shop,style:pw.TextStyle(font:arabicBold,color:pdf.PdfColor.fromHex('#D7AF59'),fontSize:24)),
-        pw.Text('فاتورة مبيعات • تونة بلس',style:pw.TextStyle(font:arabicFont,color:pdf.PdfColor.fromHex('#D7AF59'),fontSize:12))
+        pdfText(shop,style:pw.TextStyle(font:arabicBold,color:pdf.PdfColor.fromHex('#D7AF59'),fontSize:24)),
+        pdfText('فاتورة مبيعات • تونة بلس',style:pw.TextStyle(font:arabicFont,color:pdf.PdfColor.fromHex('#D7AF59'),fontSize:12))
       ])),
       pw.SizedBox(height:18),
-      pw.Text('رقم الفاتورة: ${sale['invoice']}',style:bold,textAlign:pw.TextAlign.right),
-      pw.Text('التاريخ: ${(sale['created'] as String).substring(0,16).replaceFirst('T',' ')}',style:normal,textAlign:pw.TextAlign.right),
-      pw.Text('العميل: ${client?['name']??'عميل نقدي'}',style:normal,textAlign:pw.TextAlign.right),
+      pdfText('رقم الفاتورة: ${sale['invoice']}',style:bold,textAlign:pw.TextAlign.right),
+      pdfText('التاريخ: ${(sale['created'] as String).substring(0,16).replaceFirst('T',' ')}',style:normal,textAlign:pw.TextAlign.right),
+      pdfText('العميل: ${client?['name']??'عميل نقدي'}',style:normal,textAlign:pw.TextAlign.right),
       pw.SizedBox(height:14),
-      pw.TableHelper.fromTextArray(data:[['الوزن (كجم)','سعر الكيلو','الإجمالي'],[sale['kg'].toString(),money(sale['price'] as num),money(total)]],headerStyle:pw.TextStyle(font:arabicBold,fontSize:11),cellStyle:normal),
+      pw.TableHelper.fromTextArray(data:[[pdfArabic('الوزن (كجم)'),pdfArabic('سعر الكيلو'),pdfArabic('الإجمالي')],[pdfArabic(sale['kg'].toString()),pdfArabic(money(sale['price'] as num)),pdfArabic(money(total))]],headerStyle:pw.TextStyle(font:arabicBold,fontSize:11),cellStyle:normal),
       pw.SizedBox(height:16),
-      pw.Text('الإجمالي: ${money(total)}',style:bold,textAlign:pw.TextAlign.right),
-      pw.Text('المدفوع: ${money(paid)}',style:normal,textAlign:pw.TextAlign.right),
-      pw.Text('المتبقي: ${money(due)}',style:bold,textAlign:pw.TextAlign.right),
-      if((sale['note'] as String? ?? '').isNotEmpty)pw.Padding(padding:const pw.EdgeInsets.only(top:10),child:pw.Text('ملاحظات: ${sale['note']}',style:normal,textAlign:pw.TextAlign.right)),
+      pdfText('الإجمالي: ${money(total)}',style:bold,textAlign:pw.TextAlign.right),
+      pdfText('المدفوع: ${money(paid)}',style:normal,textAlign:pw.TextAlign.right),
+      pdfText('المتبقي: ${money(due)}',style:bold,textAlign:pw.TextAlign.right),
+      if((sale['note'] as String? ?? '').isNotEmpty)pw.Padding(padding:const pw.EdgeInsets.only(top:10),child:pdfText('ملاحظات: ${sale['note']}',style:normal,textAlign:pw.TextAlign.right)),
       pw.SizedBox(height:22),pw.Divider(),
-      pw.Text('بيانات التحويل البنكي',style:bold,textAlign:pw.TextAlign.right),
-      pw.Text('بنك العميقي: $bank',style:normal,textAlign:pw.TextAlign.right),
-      pw.Text(owner,style:normal,textAlign:pw.TextAlign.right),
-      pw.Text('رقم الهاتف: $phone',style:normal,textAlign:pw.TextAlign.right),
-      pw.Text('العنوان: $address',style:normal,textAlign:pw.TextAlign.right),
-      pw.SizedBox(height:18),pw.Center(child:pw.Text('شكراً لثقتكم • تونة بلس',style:bold))
+      pdfText('بيانات التحويل البنكي',style:bold,textAlign:pw.TextAlign.right),
+      pdfText('بنك العميقي: $bank',style:normal,textAlign:pw.TextAlign.right),
+      pdfText(owner,style:normal,textAlign:pw.TextAlign.right),
+      pdfText('رقم الهاتف: $phone',style:normal,textAlign:pw.TextAlign.right),
+      pdfText('العنوان: $address',style:normal,textAlign:pw.TextAlign.right),
+      pw.SizedBox(height:18),pw.Center(child:pdfText('شكراً لثقتكم • تونة بلس',style:bold))
     ]))));
     return doc;
   }
@@ -688,29 +695,29 @@ class ReportsPage extends StatelessWidget{
     final bold=pw.TextStyle(font:arabicBold,fontSize:14);
     final heading=pw.TextStyle(font:arabicBold,fontSize:20,color:pdf.PdfColor.fromHex('#B78B34'));
     final number=(num? value)=>NumberFormat('#,##0.##','en').format(value??0);
-    doc.addPage(pw.MultiPage(pageFormat:pdf.PdfPageFormat.a4,margin:const pw.EdgeInsets.all(28),header:(ctx)=>pw.Container(alignment:pw.Alignment.centerRight,padding:const pw.EdgeInsets.only(bottom:8),child:pw.Text('تونة بلس • تقرير الحسابات',style:heading)),footer:(ctx)=>pw.Container(alignment:pw.Alignment.center,padding:const pw.EdgeInsets.only(top:8),child:pw.Text('صفحة ${ctx.pageNumber} من ${ctx.pagesCount}',style:normal)),build:(ctx)=>[
+    doc.addPage(pw.MultiPage(pageFormat:pdf.PdfPageFormat.a4,margin:const pw.EdgeInsets.all(28),header:(ctx)=>pw.Container(alignment:pw.Alignment.centerRight,padding:const pw.EdgeInsets.only(bottom:8),child:pdfText('تونة بلس • تقرير الحسابات',style:heading)),footer:(ctx)=>pw.Container(alignment:pw.Alignment.center,padding:const pw.EdgeInsets.only(top:8),child:pdfText('صفحة ${ctx.pageNumber} من ${ctx.pagesCount}',style:normal)),build:(ctx)=>[
       pw.Directionality(textDirection:pw.TextDirection.rtl,child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
         pw.Container(padding:const pw.EdgeInsets.all(12),decoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#F4E8CF'),borderRadius:pw.BorderRadius.circular(8)),child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
-          pw.Text('ملخص مالي',style:pw.TextStyle(font:arabicBold,fontSize:15,color:pdf.PdfColor.fromHex('#27221A'))),
+          pdfText('ملخص مالي',style:pw.TextStyle(font:arabicBold,fontSize:15,color:pdf.PdfColor.fromHex('#27221A'))),
           pw.SizedBox(height:8),
-          pw.Text('إجمالي المبيعات: ${number(t['sales'])} ر.ي',style:normal),
-          pw.Text('المدفوع في الفواتير: ${number(t['paid'])} ر.ي',style:normal),
-          pw.Text('التحصيلات اللاحقة: ${number(t['collections'])} ر.ي',style:normal),
-          pw.Text('الديون المتبقية: ${number(t['debt'])} ر.ي',style:normal),
-          pw.Text('الوزن المباع: ${number(t['weight'])} كجم',style:normal),
-          pw.Text('الربح من المبيعات بعد المصروفات: ${number(t['netProfit'])} ر.ي • ${(t['profitFinal']??0)>0?'نهائي':'غير نهائي بسبب وجود مخزون'}',style:bold),
-          pw.Text('المخزون الصافي المتبقي: ${number(t['remainingKg'])} كجم',style:normal),
-          pw.Text('قيمة تكلفة المخزون المتبقي: ${number(t['inventoryCost'])} ر.ي',style:normal),
-          pw.Text('إجمالي المصروفات المسجلة: ${number(t['expenses'])} ر.ي',style:normal),
-          pw.Text('المصروفات المحملة على المبيعات: ${number(t['expensesAllocated'])} ر.ي',style:normal),
-          if((t['unallocatedSoldKg']??0)>0.0001)pw.Text('تنبيه: وزن مبيعات غير موزع على المخزون: ${number(t['unallocatedSoldKg']!)} كجم؛ الربح غير محسوب لوجود نقص.',style:pw.TextStyle(font:arabicBold,fontSize:11,color:pdf.PdfColor.fromHex('#B3261E'))),
+          pdfText('إجمالي المبيعات: ${number(t['sales'])} ر.ي',style:normal),
+          pdfText('المدفوع في الفواتير: ${number(t['paid'])} ر.ي',style:normal),
+          pdfText('التحصيلات اللاحقة: ${number(t['collections'])} ر.ي',style:normal),
+          pdfText('الديون المتبقية: ${number(t['debt'])} ر.ي',style:normal),
+          pdfText('الوزن المباع: ${number(t['weight'])} كجم',style:normal),
+          pdfText('الربح من المبيعات بعد المصروفات: ${number(t['netProfit'])} ر.ي • ${(t['profitFinal']??0)>0?'نهائي':'غير نهائي بسبب وجود مخزون'}',style:bold),
+          pdfText('المخزون الصافي المتبقي: ${number(t['remainingKg'])} كجم',style:normal),
+          pdfText('قيمة تكلفة المخزون المتبقي: ${number(t['inventoryCost'])} ر.ي',style:normal),
+          pdfText('إجمالي المصروفات المسجلة: ${number(t['expenses'])} ر.ي',style:normal),
+          pdfText('المصروفات المحملة على المبيعات: ${number(t['expensesAllocated'])} ر.ي',style:normal),
+          if((t['unallocatedSoldKg']??0)>0.0001)pdfText('تنبيه: وزن مبيعات غير موزع على المخزون: ${number(t['unallocatedSoldKg']!)} كجم؛ الربح غير محسوب لوجود نقص.',style:pw.TextStyle(font:arabicBold,fontSize:11,color:pdf.PdfColor.fromHex('#B3261E'))),
         ])),
         pw.SizedBox(height:14),
-        pw.Text('تفاصيل الفواتير',style:pw.TextStyle(font:arabicBold,fontSize:15)),
+        pdfText('تفاصيل الفواتير',style:pw.TextStyle(font:arabicBold,fontSize:15)),
         pw.SizedBox(height:8),
         pw.TableHelper.fromTextArray(
-          headers:['رقم الفاتورة','التاريخ','الوزن كجم','السعر/كجم','الإجمالي','المدفوع'],
-          data:rows.map((r)=>[r['invoice']??'—',(r['created'] as String).substring(0,10),number(r['kg'] as num),number(r['price'] as num),number(r['total'] as num),number(r['paid'] as num)]).toList(),
+          headers:['رقم الفاتورة','التاريخ','الوزن كجم','السعر/كجم','الإجمالي','المدفوع'].map(pdfArabic).toList(),
+          data:rows.map((r)=>[r['invoice']??'—',(r['created'] as String).substring(0,10),number(r['kg'] as num),number(r['price'] as num),number(r['total'] as num),number(r['paid'] as num)].map((v)=>pdfArabic(v.toString())).toList()).toList(),
           headerStyle:pw.TextStyle(font:arabicBold,fontSize:8,color:pdf.PdfColors.white),
           headerDecoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#2C2924')),
           cellStyle:pw.TextStyle(font:arabicFont,fontSize:8),
