@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - tuna-plus-1.1.3-fixes
+      - tuna-plus-1.1.4-fixes
   workflow_dispatch:
 permissions:
   contents: read
