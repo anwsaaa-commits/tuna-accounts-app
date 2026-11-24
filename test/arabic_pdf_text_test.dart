@@ -1,3 +1,4 @@
+// Regression test: the bundled PDF font must cover Arabic labels and invoice digits.
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf_text_shaper/pdf_text_shaper.dart';
