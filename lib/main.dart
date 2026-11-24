@@ -12,6 +12,7 @@ import 'package:printing/printing.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:permission_handler/permission_handler.dart' as permissions;
 import 'package:pdf_text_shaper/pdf_text_shaper.dart';
+import 'pdf_text_utils.dart';
 
 const gold = Color(0xFFD7AF59);
 const dark = Color(0xFF101114);
@@ -44,13 +45,7 @@ pw.Widget pdfText(
   pdf.PdfColor? color,
   ShapedTextAlign align = ShapedTextAlign.end,
 }) => ShapedText(
-  // Normalize unsupported decorative bullets before shaping text with the Arabic font.
-  value
-      // Normalize dash-like punctuation before shaping. Some Arabic font files
-      // lack ASCII punctuation, which previously caused PDF generation to throw.
-      .replaceAll(RegExp(r'[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]'), ' ')
-      .replaceAll('•', '،')
-      .replaceAll('-', ' '),
+  sanitizePdfText(value),
   style: ShapedTextStyle(
     font: font,
     fontSize: fontSize,
