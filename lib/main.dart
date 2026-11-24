@@ -44,7 +44,8 @@ pw.Widget pdfText(
   pdf.PdfColor? color,
   ShapedTextAlign align = ShapedTextAlign.end,
 }) => ShapedText(
-  value,
+  // Normalize unsupported decorative bullets before shaping text with the Arabic font.
+  value.replaceAll('•', '-'),
   style: ShapedTextStyle(
     font: font,
     fontSize: fontSize,
@@ -536,22 +537,30 @@ class _ReservationsPageState extends State<ReservationsPage> {
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('حجوزات الكمية القادمة')),floatingActionButton:FloatingActionButton.extended(onPressed:add,icon:const Icon(Icons.add),label:const Text('حجز جديد')),body:FutureBuilder<List<Map<String,Object?>>>(future:future,builder:(context,s){
     if(s.hasError)return Center(child:Text('خطأ: ${s.error}'));
     if(!s.hasData)return const Center(child:CircularProgressIndicator());
+    final active=s.data!.where((r)=>r['status']!='تم التسليم'&&r['status']!='ملغي');
+    final activeKg=active.fold<num>(0,(sum,r)=>sum+(r['kg'] as num));
+    final activeCount=active.length;
     if(s.data!.isEmpty)return const Center(child:Text('لا توجد حجوزات حتى الآن'));
-    return ListView(padding:const EdgeInsets.all(12),children:s.data!.map((r)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-      Text(r['customer_name'] as String,style:const TextStyle(color:gold,fontWeight:FontWeight.bold,fontSize:17)),
-      Text('الهاتف: ${r['phone']??'—'}'),
-      Text('الكمية: ${(r['kg'] as num).toStringAsFixed(3)} كجم • سعر الكيلو: ${money(r['price'] as num)}'),
-      Text('الإجمالي: ${money(r['total'] as num)} • العربون: ${money(r['deposit'] as num)}'),
-      Text('الحالة: ${r['status']}'),
-      if((r['note'] as String? ?? '').isNotEmpty)Text('ملاحظات: ${r['note']}'),
-      Row(children:[
-        Expanded(child:DropdownButton<String>(isExpanded:true,value:r['status'] as String,items:['بانتظار وصول الكمية','مؤكد','تم التسليم','ملغي'].map((v)=>DropdownMenuItem(value:v,child:Text(v,overflow:TextOverflow.ellipsis))).toList(),onChanged:(v)async{if(v!=null){await DB.instance.updateReservationStatus(r['id'] as int,v);reload();}})),
-        IconButton(tooltip:'حذف الحجز',onPressed:()async{await DB.instance.deleteReservation(r['id'] as int);reload();},icon:const Icon(Icons.delete_outline,color:Colors.red))
-      ])
-    ])))).toList());
+    return ListView(padding:const EdgeInsets.all(12),children:[
+      Card(color:gold.withValues(alpha:0.12),child:Padding(padding:const EdgeInsets.all(16),child:Row(children:[
+        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('إجمالي الكميات المحجوزة القادمة',style:TextStyle(fontWeight:FontWeight.bold)),Text('${activeKg.toStringAsFixed(3)} كجم',style:const TextStyle(fontSize:22,color:gold,fontWeight:FontWeight.bold)))])),
+        Column(children:[const Text('الحجوزات النشطة'),Text('$activeCount',style:const TextStyle(color:gold,fontWeight:FontWeight.bold,fontSize:18))])
+      ]))),
+      ...s.data!.map((r)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Text(r['customer_name'] as String,style:const TextStyle(color:gold,fontWeight:FontWeight.bold,fontSize:17)),
+        Text('الهاتف: ${r['phone']??'—'}'),
+        Text('الكمية: ${(r['kg'] as num).toStringAsFixed(3)} كجم - سعر الكيلو: ${money(r['price'] as num)}'),
+        Text('الإجمالي: ${money(r['total'] as num)} - العربون: ${money(r['deposit'] as num)}'),
+        Text('الحالة: ${r['status']}'),
+        if((r['note'] as String? ?? '').isNotEmpty)Text('ملاحظات: ${r['note']}'),
+        Row(children:[
+          Expanded(child:DropdownButton<String>(isExpanded:true,value:r['status'] as String,items:['بانتظار وصول الكمية','مؤكد','تم التسليم','ملغي'].map((v)=>DropdownMenuItem(value:v,child:Text(v,overflow:TextOverflow.ellipsis))).toList(),onChanged:(v)async{if(v!=null){await DB.instance.updateReservationStatus(r['id'] as int,v);reload();}})),
+          IconButton(tooltip:'حذف الحجز',onPressed:()async{await DB.instance.deleteReservation(r['id'] as int);reload();},icon:const Icon(Icons.delete_outline,color:Colors.red))
+        ])
+      ])))).toList(),
+    ]);
   }));
 }
-
 class InvoicePage extends StatefulWidget{const InvoicePage({super.key});@override State<InvoicePage> createState()=>_InvoicePageState();}
 class _InvoicePageState extends State<InvoicePage>{
   late Future<List<Map<String,Object?>>> future;@override void initState(){super.initState();future=DB.instance.sales();}
