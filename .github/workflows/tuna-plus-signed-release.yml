@@ -176,7 +176,7 @@ jobs:
       - run: flutter pub get
       - name: Generate crowned Tuna Plus launcher icon
         run: |
-          test -s assets/app_icon.png
+          test -s assets/tuna_plus_crown_icon.png
           dart run flutter_launcher_icons
       - name: Raise cached Flutter plugin compile SDK to 36
         run: |
