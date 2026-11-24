@@ -234,20 +234,30 @@ class DB {
   Future<void> updatePrivateBatch(int id,double grossKg,int purchasePrice,double netKg,String note) async {
     if(!grossKg.isFinite || grossKg<=0 || purchasePrice<=0 || !netKg.isFinite || netKg<=0 || netKg>grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
     final db=await database;
-    final sold=(await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
-    final stock=(await db.rawQuery('SELECT COALESCE(SUM(net_kg),0) kg FROM private_batches')).first['kg'] as num;
-    final old=(await db.query('private_batches',where:'id=?',whereArgs:[id])).first;
-    final resultingNet=stock-(old['net_kg'] as num)+netKg;
-    if(resultingNet+0.0001<sold) throw Exception('لا يمكن تعديل الشراء: المخزون الصافي الناتج أقل من الوزن المباع.');
-    await db.update('private_batches',{'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'note':note.trim()},where:'id=?',whereArgs:[id]);
+    // Validate and update within one transaction so stock cannot change between check and write.
+    await db.transaction((txn) async {
+      final oldRows=await txn.query('private_batches',where:'id=?',whereArgs:[id],limit:1);
+      if(oldRows.isEmpty) throw Exception('عملية الشراء غير موجودة');
+      final sold=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
+      final stock=(await txn.rawQuery('SELECT COALESCE(SUM(net_kg),0) kg FROM private_batches')).first['kg'] as num;
+      final old=oldRows.first;
+      final resultingNet=stock-(old['net_kg'] as num)+netKg;
+      if(resultingNet+0.0001<sold) throw Exception('لا يمكن تعديل الشراء: المخزون الصافي الناتج أقل من الوزن المباع.');
+      await txn.update('private_batches',{'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'note':note.trim()},where:'id=?',whereArgs:[id]);
+    });
   }
   Future<void> deletePrivateBatch(int id) async {
     final db=await database;
-    final sold=(await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
-    final stock=(await db.rawQuery('SELECT COALESCE(SUM(net_kg),0) kg FROM private_batches')).first['kg'] as num;
-    final old=(await db.query('private_batches',where:'id=?',whereArgs:[id])).first;
-    if(stock-(old['net_kg'] as num)+0.0001<sold) throw Exception('لا يمكن حذف الشراء لأنه سيجعل المخزون أقل من الوزن المباع.');
-    await db.delete('private_batches',where:'id=?',whereArgs:[id]);
+    // Protect stock validation and removal as one atomic operation.
+    await db.transaction((txn) async {
+      final oldRows=await txn.query('private_batches',where:'id=?',whereArgs:[id],limit:1);
+      if(oldRows.isEmpty) throw Exception('عملية الشراء غير موجودة');
+      final sold=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
+      final stock=(await txn.rawQuery('SELECT COALESCE(SUM(net_kg),0) kg FROM private_batches')).first['kg' ] as num;
+      final old=oldRows.first;
+      if(stock-(old['net_kg'] as num)+0.0001<sold) throw Exception('لا يمكن حذف الشراء لأنه سيجعل المخزون أقل من الوزن المباع.');
+      await txn.delete('private_batches',where:'id=?',whereArgs:[id]);
+    });
   }
   Future<void> deleteSale(int id) async {
     final db = await database;
