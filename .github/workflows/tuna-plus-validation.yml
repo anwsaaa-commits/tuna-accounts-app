@@ -1,0 +1,23 @@
+name: Validate Tuna Plus Source
+on:
+  push:
+    branches:
+      - tuna-plus-1.1.3-fixes
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Analyze Dart and Flutter source
+        run: flutter analyze --no-fatal-infos
+      - name: Run unit and regression tests
+        run: flutter test --reporter expanded
