@@ -7,6 +7,7 @@ on:
       - tuna-plus-1.1.6-fixes
       - tuna-plus-1.1.7-pdf-fix
       - tuna-plus-1.1.8-pdf-render-fix
+      - tuna-plus-1.1.9-pdf-text-guard
   workflow_dispatch:
 permissions:
   contents: read
