@@ -17,6 +17,9 @@ const gold = Color(0xFFD7AF59);
 const dark = Color(0xFF101114);
 const panel = Color(0xFF202024);
 
+// Session-only contact cache to avoid repeatedly querying and sorting the full address book.
+List<Contact>? _contactCache;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('ar');
@@ -395,8 +398,13 @@ Future<void> newCustomer(BuildContext context) async {
     try {
       // Use the contacts plugin's own permission request before querying its native API.
       // This keeps the permission flow aligned with the exact plugin that reads the address book.
-      final pluginPermissionGranted=await FlutterContacts.requestPermission(readonly:true);
-      final contactPermission=await permissions.Permission.contacts.status;
+      var contactPermission=await permissions.Permission.contacts.status;
+      final pluginPermissionGranted=contactPermission.isGranted
+          ? true
+          : await FlutterContacts.requestPermission(readonly:true);
+      if(!contactPermission.isGranted && pluginPermissionGranted) {
+        contactPermission=await permissions.Permission.contacts.status;
+      }
       if(!pluginPermissionGranted || !contactPermission.isGranted){
         if(dialogContext.mounted){
           if(contactPermission.isPermanentlyDenied){
@@ -416,10 +424,14 @@ Future<void> newCustomer(BuildContext context) async {
       showDialog<void>(context:dialogContext,barrierDismissible:false,builder:(loadingContext)=>const AlertDialog(
         content:Row(mainAxisSize:MainAxisSize.min,children:[CircularProgressIndicator(),SizedBox(width:16),Flexible(child:Text('جارٍ تحميل جهات الاتصال...'))]),
       ));
-      final contacts=await FlutterContacts.getContacts(withProperties:true);
+      final contacts=_contactCache ?? await FlutterContacts.getContacts(withProperties:true);
+      _contactCache ??= contacts;
       if(dialogContext.mounted&&loadingDialogOpen){Navigator.of(dialogContext,rootNavigator:true).pop();loadingDialogOpen=false;}
       if(!dialogContext.mounted)return;
-      contacts.sort((a,b)=>a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+      if(_contactCache==null){
+        contacts.sort((a,b)=>a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+        _contactCache=contacts;
+      }
       final searchController=TextEditingController();
       final selected=await showDialog<Contact>(
         context:dialogContext,
