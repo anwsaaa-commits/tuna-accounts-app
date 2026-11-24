@@ -33,6 +33,6 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/app_icon.png"
+  image_path: "assets/tuna_plus_crown_icon.png"
   adaptive_icon_background: "#080A0F"
-  adaptive_icon_foreground: "assets/app_icon.png"
+  adaptive_icon_foreground: "assets/tuna_plus_crown_icon.png"
