@@ -45,14 +45,21 @@ pw.Widget pdfText(
   ShapedTextAlign align = ShapedTextAlign.end,
 }) => ShapedText(
   // Normalize unsupported decorative bullets before shaping text with the Arabic font.
-  value.replaceAll('•', '،').replaceAll('-', ' '),
+  value
+      // Normalize dash-like punctuation before shaping. Some Arabic font files
+      // lack ASCII punctuation, which previously caused PDF generation to throw.
+      .replaceAll(RegExp(r'[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]'), ' ')
+      .replaceAll('•', '،')
+      .replaceAll('-', ' '),
   style: ShapedTextStyle(
     font: font,
     fontSize: fontSize,
     color: color ?? pdf.PdfColors.black,
     direction: ShapedTextDirection.auto,
     align: align,
-    preserveUnicodeText: true,
+    // Render only HarfBuzz-shaped vector glyphs; the invisible Unicode layer
+    // triggered unsupported glyph errors during PDF creation on some text.
+    preserveUnicodeText: false,
   ),
 );
 
