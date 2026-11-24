@@ -425,7 +425,6 @@ Future<void> newCustomer(BuildContext context) async {
         content:Row(mainAxisSize:MainAxisSize.min,children:[CircularProgressIndicator(),SizedBox(width:16),Flexible(child:Text('جارٍ تحميل جهات الاتصال...'))]),
       ));
       final contacts=_contactCache ?? await FlutterContacts.getContacts(withProperties:true);
-      _contactCache ??= contacts;
       if(dialogContext.mounted&&loadingDialogOpen){Navigator.of(dialogContext,rootNavigator:true).pop();loadingDialogOpen=false;}
       if(!dialogContext.mounted)return;
       if(_contactCache==null){
