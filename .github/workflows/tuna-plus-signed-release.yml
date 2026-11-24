@@ -163,9 +163,6 @@ jobs:
               s = s.replace("<application", permission + "    <application", 1)
           p.write_text(s)
           PY
-      - name: Add Android app icon
-        run: |
-          echo 'Launcher icon generation will be enabled when the approved crown icon asset is added to assets/app_icon.png.'
       - name: Verify contacts permission
         run: grep -q 'android.permission.READ_CONTACTS' android/app/src/main/AndroidManifest.xml
       - name: Set app compile SDK 36
@@ -177,6 +174,10 @@ jobs:
           sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' "$FILE"
           grep -Eq 'compileSdk(Version)?[[:space:]]*(=[[:space:]]*)?36' "$FILE"
       - run: flutter pub get
+      - name: Generate crowned Tuna Plus launcher icon
+        run: |
+          test -s assets/app_icon.png
+          dart run flutter_launcher_icons
       - name: Raise cached Flutter plugin compile SDK to 36
         run: |
           find "$HOME/.pub-cache" -path '*/android/build.gradle*' -type f -print0 | xargs -0 -r sed -i -E 's/compileSdk[[:space:]]+flutter\\.compileSdkVersion/compileSdk 36/g; s/compileSdk[[:space:]]*=[[:space:]]*flutter\\.compileSdkVersion/compileSdk = 36/g; s/compileSdkVersion[[:space:]]+flutter\\.compileSdkVersion/compileSdkVersion 36/g; s/compileSdkVersion[[:space:]]+34/compileSdkVersion 36/g; s/compileSdk[[:space:]]+34/compileSdk 36/g; s/compileSdk[[:space:]]*=[[:space:]]*34/compileSdk = 36/g'
