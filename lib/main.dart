@@ -197,14 +197,15 @@ class DB {
     final totalCost=(batch['total_cost'] as num).toDouble();
     final unitCost=netKg>0?totalCost/netKg:0.0;
     final remainingByBatch=batches.map((b)=>(b['net_kg'] as num).toDouble()).toList();
-    double soldKg=0,revenue=0;
+    double soldKg=0,revenue=0,unallocatedSoldKg=0;
     final allocatedSales=<Map<String,Object?>>[];
     for(final sale in sales){
       double saleRemaining=(sale['kg'] as num).toDouble();
       final saleKg=(sale['kg'] as num).toDouble();
       final saleTotal=(sale['total'] as num).toDouble();
       for(int bi=0;bi<remainingByBatch.length && saleRemaining>0.000001;bi++){
-        final take=saleRemaining<remainingByBatch[bi]?saleRemaining:remainingByBatch[bi];
+        final available=remainingByBatch[bi]>0?remainingByBatch[bi]:0.0;
+        final take=saleRemaining<available?saleRemaining:available;
         if(take<=0)continue;
         if(bi==batchIndex){
           soldKg+=take;
@@ -215,13 +216,14 @@ class DB {
         remainingByBatch[bi]-=take;
         saleRemaining-=take;
       }
+      if(saleRemaining>0.000001)unallocatedSoldKg+=saleRemaining;
     }
     final totalNetStock=batches.fold<num>(0,(sum,b)=>sum+(b['net_kg'] as num));
     final expenses=expenseRows.fold<num>(0,(sum,e)=>sum+(e['amount'] as num));
     final expenseShare=totalNetStock>0?expenses*(soldKg/totalNetStock):0.0;
     final costOfSold=soldKg*unitCost;
     final remainingKg=netKg-soldKg;
-    return {'batch':batch,'netKg':netKg,'cost':totalCost,'unitCost':unitCost,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseShare,'profit':revenue-costOfSold-expenseShare,'expenseTotal':expenses,'allocations':allocatedSales};
+    return {'batch':batch,'netKg':netKg,'cost':totalCost,'unitCost':unitCost,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseShare,'profit':revenue-costOfSold-expenseShare,'expenseTotal':expenses,'unallocatedSoldKg':unallocatedSoldKg,'allocations':allocatedSales};
   }
   Future<void> updatePrivateBatch(int id,double grossKg,int purchasePrice,double netKg,String note) async {
     if(!grossKg.isFinite || grossKg<=0 || purchasePrice<=0 || !netKg.isFinite || netKg<=0 || netKg>grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
@@ -696,6 +698,7 @@ class ReportsPage extends StatelessWidget{
           'inventoryCost':'تكلفة المخزون المتبقي',
           'expenses':'إجمالي المصروفات',
           'expensesAllocated':'مصروفات محسوبة على المباع',
+          'unallocatedSoldKg':'وزن مبيعات غير موزع (مراجعة المخزون)',
         };
         return ListView(
           padding: const EdgeInsets.all(12),
@@ -803,7 +806,8 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
             subtitle:Text('${dateLabel(s['created'] as String)}\nالإيراد: ${money(s['revenue'] as num)}'),
             isThreeLine:true,
           ))),
-          const Text('التوزيع حسابي بطريقة FIFO (الأقدم شراءً أولاً). المصروفات العامة موزعة بنسبة وزن هذه الشحنة من إجمالي الوزن المباع. قد تشمل مبيعات سابقة غير مرتبطة بشحنة محفوظة.',style:TextStyle(fontSize:12)),
+          if((report['unallocatedSoldKg'] as num)>0.0001)Text('تنبيه: يوجد وزن مبيعات غير موزع على الشحنات بمقدار ${(report['unallocatedSoldKg'] as num).toStringAsFixed(3)} كجم؛ يلزم مراجعة المخزون قبل اعتماد الربح.',style:const TextStyle(color:Colors.orange,fontWeight:FontWeight.bold)),
+            const Text('التوزيع حسابي بطريقة FIFO (الأقدم شراءً أولاً). المصروفات العامة موزعة حسب الوزن المباع من إجمالي الوزن الصافي المشتراة، وليس ربطاً دائماً محفوظاً بين الفواتير والشحنات.',style:TextStyle(fontSize:12)),
         ]))),
         actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إغلاق'))],
       ));
