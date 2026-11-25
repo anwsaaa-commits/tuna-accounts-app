@@ -1,5 +1,5 @@
 // Regression coverage for Arabic shaping, mixed Latin glyph fallback, and actual PDF saving.
-import 'package:flutter/services.dart'' show rootBundle;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf_text_shaper/pdf_text_shaper.dart';
