@@ -1322,7 +1322,30 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
           Card(child:ListTile(title:const Text('إجمالي المصروفات الخاصة'),subtitle:Text(money(expenseTotal),style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))),
           FilledButton.tonalIcon(onPressed:addExpense,icon:const Icon(Icons.add),label:const Text('إضافة مصروف')),
           if(e.data!.isNotEmpty)const Align(alignment:Alignment.centerRight,child:Text('سجل المصروفات',style:TextStyle(fontWeight:FontWeight.bold))),
-           ...e.data!.map((row)=>Card(child:ListTile(title:Text(money(row['amount'] as num)),subtitle:Text(row['note'].toString()+'\n'+dateLabel(row['created'] as String)),isThreeLine:true,leading:const Icon(Icons.money_off,color:gold),trailing:PopupMenuButton<String>(onSelected:(action){if(action=='edit'){editExpense(row);}else if(action=='delete'){deleteExpense(row);}},itemBuilder:(_)=>const [PopupMenuItem(value:'edit',child:Text('تعديل المصروف')),PopupMenuItem(value:'delete',child:Text('حذف المصروف'))],child:const Icon(Icons.more_vert))))
+            ...e.data!.map((row) {
+              return Card(
+                child: ListTile(
+                  title: Text(money(row['amount'] as num)),
+                  subtitle: Text('${row['note']}\n${dateLabel(row['created'] as String)}'),
+                  isThreeLine: true,
+                  leading: const Icon(Icons.money_off, color: gold),
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (action) {
+                      if (action == 'edit') {
+                        editExpense(row);
+                      } else if (action == 'delete') {
+                        deleteExpense(row);
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'edit', child: Text('تعديل المصروف')),
+                      PopupMenuItem(value: 'delete', child: Text('حذف المصروف')),
+                    ],
+                    child: const Icon(Icons.more_vert),
+                  ),
+                ),
+              );
+            }),
         ]);
       }),
       const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
