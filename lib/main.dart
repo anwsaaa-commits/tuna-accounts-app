@@ -39,7 +39,7 @@ String normalizeWhatsAppNumber(String raw) {
   return '967$digits';
 }
 String reservationArrivalMessage(String customerName, num kg) =>
-    'مرحباً ' + customerName + '، نبلغك من تونة بلس أن الكمية المحجوزة (' + kg.toStringAsFixed(3) + ' كجم) قد وصلت. يمكنك التواصل معنا لتأكيد الاستلام. شكراً لك.';
+    'مرحباً ' + customerName + '، نبلغك من تونة بلس أن الكمية المحجوزة (' + kg.toStringAsFixed(3) + ' كجم) قد وصلت. يمكنك التواصل معنا لتأكيد الاستلام. شكراً لك.\\n\\n📲 مراسلة تونــه بلــس عبر واتساب. https://wa.me/967733099270';
 
 
 // Arabic shaping font plus a cached Latin fallback for invoice IDs and symbols.
