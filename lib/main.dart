@@ -173,17 +173,26 @@ class _AppShellState extends State<AppShell> {
       CustomersPage(key:ValueKey('customers$revision')),
       ReportsPage(key:ValueKey('reports$revision')),
     ];
-    return Scaffold(
-      appBar: AppBar(title:Text(const ['الرئيسية','الفواتير','العملاء','التقارير'][selected]),actions:[
-        IconButton(icon:const Icon(Icons.settings),onPressed:()async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>const SettingsPage()));if(mounted)refreshAll();})
-      ]),
-      body:pages[selected],
-      bottomNavigationBar:NavigationBar(selectedIndex:selected,onDestinationSelected:(v)=>setState(()=>selected=v),backgroundColor:panel,indicatorColor:gold.withValues(alpha:0.18),destinations:const [
-        NavigationDestination(icon:Icon(Icons.home),label:'الرئيسية'),
-        NavigationDestination(icon:Icon(Icons.receipt_long),label:'فواتير'),
-        NavigationDestination(icon:Icon(Icons.people),label:'عملاء'),
-        NavigationDestination(icon:Icon(Icons.bar_chart),label:'تقارير'),
-      ]),
+    return WillPopScope(
+      onWillPop: () async {
+        if (selected != 0) {
+          setState(() => selected = 0);
+          return false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        appBar: AppBar(title:Text(const ['الرئيسية','الفواتير','العملاء','التقارير'][selected]),actions:[
+          IconButton(icon:const Icon(Icons.settings),onPressed:()async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>const SettingsPage()));if(mounted)refreshAll();})
+        ]),
+        body:pages[selected],
+        bottomNavigationBar:NavigationBar(selectedIndex:selected,onDestinationSelected:(v)=>setState(()=>selected=v),backgroundColor:panel,indicatorColor:gold.withValues(alpha:0.18),destinations:const [
+          NavigationDestination(icon:Icon(Icons.home),label:'الرئيسية'),
+          NavigationDestination(icon:Icon(Icons.receipt_long),label:'فواتير'),
+          NavigationDestination(icon:Icon(Icons.people),label:'عملاء'),
+          NavigationDestination(icon:Icon(Icons.bar_chart),label:'تقارير'),
+        ]),
+      ),
     );
   }
 }
