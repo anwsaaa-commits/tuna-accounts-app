@@ -206,6 +206,12 @@ class DB {
     return {'soldKg':sold,'remainingKg': (net-sold).clamp(0,net),'revenue':r['revenue'] as num,'expenses':expenses,'cost':cost,'complete':complete?1:0,'profit':complete?(r['revenue'] as num)-cost-expenses:0};
   }
   Future<List<Map<String,Object?>>> batchSalesRows(int id) async => (await (await database).rawQuery('SELECT s.invoice,s.created,s.price,a.allocated_kg FROM sale_batch_allocations a JOIN sales s ON s.id=a.sale_id WHERE a.batch_id=? ORDER BY s.created DESC',[id]));
+  Future<num> unallocatedSalesKg() async {
+    final db = await database;
+    final result = await db.rawQuery('SELECT COALESCE(SUM(MAX(s.kg-COALESCE(a.allocated,0),0)),0) AS kg FROM sales s LEFT JOIN (SELECT sale_id,SUM(allocated_kg) allocated FROM sale_batch_allocations GROUP BY sale_id) a ON a.sale_id=s.id');
+    return result.first['kg'] as num;
+  }
+
   Future<int> deletePrivateBatch(int id) async {
     final db = await database;
     final linkedExpenses = (await db.rawQuery('SELECT COUNT(*) AS n FROM expenses WHERE batch_id=?',[id])).first['n'] as int;
@@ -702,6 +708,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
           ...e.data!.map((row)=>Card(child:ListTile(title:Text(money(row['amount'] as num)),subtitle:Text('${row['note']}\\n${dateLabel(row['created'] as String)}'),isThreeLine:true,leading:const Icon(Icons.money_off,color:gold),trailing:PopupMenuButton<String>(tooltip:'خيارات المصروف',onSelected:(v){if(v=='edit')editExpense(row);if(v=='delete')removeExpense(row['id'] as int);},itemBuilder:(ctx)=>const [PopupMenuItem(value:'edit',child:Text('تعديل')),PopupMenuItem(value:'delete',child:Text('حذف'))]))))
         ]);
       }),
+      FutureBuilder<num>(future:DB.instance.unallocatedSalesKg(),builder:(context,snapshot){if(!snapshot.hasData||snapshot.data!<=0.000001)return const SizedBox.shrink();return Card(child:ListTile(leading:const Icon(Icons.info_outline,color:gold),title:const Text('مبيعات غير مخصصة لدفعات الشراء'),subtitle:Text('${snapshot.data!.toStringAsFixed(3)} كجم\\nقد تشمل مبيعات المخزون القديم قبل بدء التتبع أو كمية تجاوزت الدفعات المسجلة. لا تُحتسب ضمن كشف ربح أي دفعة.')));}),
       const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
       if(rows.isEmpty)const Padding(padding:EdgeInsets.all(18),child:Text('لم تسجل مشتريات بعد',textAlign:TextAlign.center)),
       ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;final batchId=r['id'] as int;return FutureBuilder<num>(future:DB.instance.expensesForBatch(batchId),builder:(context,ex){final batchExpenses=ex.data??0;final adjustedTotal=tc+batchExpenses;final adjustedPerKg=n==0?0:adjustedTotal/n;return Card(child:ListTile(onTap:()=>showBatchStatement(r),title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • تكلفة الشراء: ${money(tc)}\nمصروفات مرتبطة: ${money(batchExpenses)} • الإجمالي الحقيقي: ${money(adjustedTotal)}'),isThreeLine:true,trailing:PopupMenuButton<String>(tooltip:'خيارات عملية الشراء',onSelected:(v){if(v=='edit')editBatch(r);if(v=='delete')removeBatch(batchId);},itemBuilder:(ctx)=>const [PopupMenuItem(value:'edit',child:Text('تعديل')),PopupMenuItem(value:'delete',child:Text('حذف'))])));}})
