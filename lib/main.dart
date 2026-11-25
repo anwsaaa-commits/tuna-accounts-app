@@ -330,7 +330,16 @@ class _InvoicePreviewState extends State<InvoicePreview>{
   ])));
 }
 Widget _invoiceRow(String label,String value,{bool strong=false})=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[Text(label,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null),Flexible(child:Text(value,textAlign:TextAlign.end,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null))]));
-Future<void> sendCustomerSms(BuildContext context, Map<String,Object?> client) async {\n  final phone=(client['phone'] as String? ?? '').replaceAll(RegExp(r'[^0-9+]'), '').trim();\n  if(phone.isEmpty){showMessage(context,'لا يوجد رقم هاتف مسجل لهذا العميل');return;}\n  final name=(client['name'] as String? ?? 'عميلنا').trim();\n  final body='السلام عليكم $name، نود إشعارك بأن كمية التونة الطازجة أصبحت متوفرة الآن. يسعدنا خدمتك في تونة بلس، وشكرًا لثقتك بنا.';\n  final uri=Uri(scheme:'sms',path:phone,queryParameters:{'body':body});\n  if(!await launchUrl(uri)){showMessage(context,'تعذر فتح تطبيق الرسائل');}\n}\n\nclass CustomersPage extends StatefulWidget{const CustomersPage({super.key});@override State<CustomersPage> createState()=>_CustomersPageState();}
+Future<void> sendCustomerSms(BuildContext context, Map<String,Object?> client) async {
+  final phone=(client['phone'] as String? ?? '').replaceAll(RegExp(r'[^0-9+]'), '').trim();
+  if(phone.isEmpty){showMessage(context,'لا يوجد رقم هاتف مسجل لهذا العميل');return;}
+  final name=(client['name'] as String? ?? 'عميلنا').trim();
+  final body='السلام عليكم $name، نود إشعارك بأن كمية التونة الطازجة أصبحت متوفرة الآن. يسعدنا خدمتك في تونة بلس، وشكرًا لثقتك بنا.';
+  final uri=Uri(scheme:'sms',path:phone,queryParameters:{'body':body});
+  if(!await launchUrl(uri)){showMessage(context,'تعذر فتح تطبيق الرسائل');}
+}
+
+class CustomersPage extends StatefulWidget{const CustomersPage({super.key});@override State<CustomersPage> createState()=>_CustomersPageState();}
 class _CustomersPageState extends State<CustomersPage>{
   late Future<List<Map<String,Object?>>> future;@override void initState(){super.initState();future=DB.instance.customers();}
   @override Widget build(BuildContext context)=>FutureBuilder<List<Map<String,Object?>>>(future:future,builder:(context,s)=>Column(children:[
@@ -497,6 +506,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
   Future<void> removeExpense(int id) async {
     final confirm=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حذف المصروف'),content:const Text('هل تريد حذف هذا المصروف نهائيًا؟'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حذف'))]));
     if(confirm==true){await DB.instance.deleteExpense(id);if(mounted)setState(reloadEntries);}
+  }
   }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('حسابات الشراء والمصروفات الخاصة')),body:FutureBuilder<List<Map<String,Object?>>>(future:entries,builder:(context,s){
     if(s.hasError)return Center(child:Text('خطأ: ${s.error}'));
