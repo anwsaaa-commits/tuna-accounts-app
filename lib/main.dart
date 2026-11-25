@@ -179,9 +179,9 @@ class DB {
     return (await database).update('expenses', {'amount':amount,'note':note.trim()}, where:'id=?', whereArgs:[id]);
   }
   Future<int> deleteExpense(int id) async => (await database).delete('expenses', where:'id=?', whereArgs:[id]);
-  Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note) async {
-    if (grossKg <= 0 || purchasePrice <= 0 || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
-    return (await database).insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':DateTime.now().toIso8601String(),'note':note.trim()});
+  Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note, {DateTime? purchaseDate}) async {
+    if (!grossKg.isFinite || !netKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
+    return (await database).insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':(purchaseDate ?? DateTime.now()).toIso8601String(),'note':note.trim()});
   }
   Future<int> updatePrivateBatch(int id, double grossKg, int purchasePrice, double netKg, String note) async {
     if (!grossKg.isFinite || !netKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
@@ -585,13 +585,15 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
   void reloadEntries(){entries=DB.instance.privateBatches();expenseEntries=DB.instance.expenses();}
   Future<void> addEntry() async {
     final gross=TextEditingController(),price=TextEditingController(),net=TextEditingController(),note=TextEditingController();
-    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('تسجيل شراء تونة (خاص)'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+    DateTime purchaseDate=DateTime.now();
+    await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('تسجيل شراء تونة (خاص)'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
       TextField(controller:gross,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الإجمالي عند الشراء (كجم)')),
       TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'تكلفة شراء الكيلو (ريال)')),
       TextField(controller:net,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الصافي بعد التقطيع (كجم)')),
+      ListTile(contentPadding:EdgeInsets.zero,title:const Text('تاريخ الشراء'),subtitle:Text(DateFormat('yyyy/MM/dd').format(purchaseDate)),trailing:IconButton(icon:const Icon(Icons.calendar_month),tooltip:'اختيار تاريخ الشراء',onPressed:()async{final selected=await showDatePicker(context:ctx,initialDate:purchaseDate,firstDate:DateTime(2020),lastDate:DateTime(2100));if(selected!=null)setDialog(()=>purchaseDate=DateTime(selected.year,selected.month,selected.day,purchaseDate.hour,purchaseDate.minute));})),
       TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظة (اختياري)')),
       const SizedBox(height:8),const Text('هذه البيانات خاصة ولا تظهر في فواتير العملاء أو كشوفهم.')
-    ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addPrivateBatch(double.parse(gross.text),int.parse(price.text),double.parse(net.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ'))]));
+    ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addPrivateBatch(double.parse(gross.text),int.parse(price.text),double.parse(net.text),note.text,purchaseDate:purchaseDate);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ'))])));
   }
   Future<void> showBatchStatement(Map<String,Object?> row) async {
     final id = row['id'] as int;
