@@ -60,7 +60,7 @@ class DB {
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) { await db.execute('CREATE TABLE private_batches(id INTEGER PRIMARY KEY AUTOINCREMENT,gross_kg REAL NOT NULL,purchase_price INTEGER NOT NULL,total_cost INTEGER NOT NULL,net_kg REAL NOT NULL,created TEXT NOT NULL,note TEXT)'); }
         if (oldVersion < 3) { await db.execute('CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,amount INTEGER NOT NULL,note TEXT NOT NULL,created TEXT NOT NULL,batch_id INTEGER)'); }
-        if (oldVersion < 4) { await db.execute('ALTER TABLE expenses ADD COLUMN batch_id INTEGER'); }
+        if (oldVersion >= 3 && oldVersion < 4) { await db.execute('ALTER TABLE expenses ADD COLUMN batch_id INTEGER'); }
       },
       onCreate: (db, version) async {
         await db.execute('CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,phone TEXT,note TEXT)');
