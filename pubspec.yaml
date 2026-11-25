@@ -1,7 +1,7 @@
 name: tuna_sales_ledger
 description: تطبيق حسابات بيع التونة بالكيلو وإدارة العملاء والفواتير والتحصيل والتقارير.
 publish_to: 'none'
-version: 1.1.9+31
+version: 1.1.10+32
 
 environment:
   sdk: '>=3.13.0 <4.0.0'
@@ -21,6 +21,7 @@ dependencies:
   flutter_contacts: ^1.1.9+2
   permission_handler: ^11.3.1
   pdf_text_shaper: ^1.1.1
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
@@ -33,6 +34,7 @@ flutter:
   assets:
     - assets/fonts/NotoNaskhArabic-Regular.ttf
     - assets/fonts/NotoSans-Regular.ttf
+    - assets/tuna_plus_crown_icon.png
 
 flutter_launcher_icons:
   android: true
