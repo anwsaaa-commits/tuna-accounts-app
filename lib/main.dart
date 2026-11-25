@@ -190,7 +190,7 @@ class DB {
     if (allocated > netKg + 0.000001) throw Exception('لا يمكن تقليل الوزن الصافي إلى أقل من الكمية المباعة المرتبطة بهذه الدفعة.');
     final current = (await db.query('private_batches',where:'id=?',whereArgs:[id],limit:1)).first;
     if ( allocated > 0.000001 && (grossKg != (current['gross_kg'] as num).toDouble() || netKg != (current['net_kg'] as num).toDouble() || purchasePrice != (current['purchase_price'] as num).toInt() || (purchaseDate != null && !DateTime.parse(current['created'] as String).isAtSameMomentAs(purchaseDate)))) {
-      throw Exception('هذه الدفعة مرتبطة بمبيعات؛ لا يمكن تعديل الوزن أو سعر الشراء حتى لا تتغير حسابات الربح السابقة. يمكنك تعديل الملاحظات فقط.');
+      throw Exception('هذه الدفعة مرتبطة بمبيعات؛ لا يمكن تعديل التاريخ أو الوزن أو سعر الشراء حتى لا تتغير حسابات الربح السابقة. يمكنك تعديل الملاحظات فقط.');
     }
     return db.update('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':(purchaseDate ?? DateTime.parse(current['created'] as String)).toIso8601String(),'note':note.trim()}, where:'id=?', whereArgs:[id]);
   }
@@ -642,7 +642,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
     ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.updatePrivateBatch(row['id'] as int,double.parse(gross.text),int.parse(price.text),double.parse(net.text),note.text,purchaseDate:purchaseDate);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ التعديل'))])));
   }
   Future<void> removeBatch(int id) async {
-    final confirm=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حذف عملية الشراء'),content:const Text('هل تريد حذف عملية الشراء؟ لا يمكن حذفها إذا كانت مرتبطة بمصروفات.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حذف'))]));
+    final confirm=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حذف عملية الشراء'),content:const Text('هل تريد حذف عملية الشراء؟ لا يمكن حذفها إذا كانت مرتبطة بمصروفات أو مبيعات.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حذف'))]));
     if(confirm==true){try{await DB.instance.deletePrivateBatch(id);if(mounted)setState(reloadEntries);}catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}}
   }
   Future<void> addExpense() async {
