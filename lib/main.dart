@@ -620,7 +620,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
         Text('تاريخ الشراء: ${dateLabel(row['created'] as String)}'),
         Text('الوزن الصافي: ${(row['net_kg'] as num).toStringAsFixed(2)} كجم'),
         Text('تكلفة الشراء: ${money(row['total_cost'] as num)}'),
-        const Text('تخصيص المبيعات آليًا حسب أقدم دفعة مسجلة (FIFO). إذا كان لديك مخزون قديم غير مسجل عند بدء التتبع، فقد يؤثر على دقة نسبة المبيعات لهذه الدفعة؛ راجع الكمية غير المخصصة في صفحة الشراء.'),
+        const Text('يتم ربط كل بيع بالدفعة التي تختارها يدويًا. مبيعات المخزون القديم أو غير المسجل لا تدخل في حساب دفعات الشراء.'),
         FutureBuilder<Map<String,num>>(future:summaryFuture,builder:(context,s){
           if(!s.hasData)return const Padding(padding:EdgeInsets.all(12),child:LinearProgressIndicator());
           final v=s.data!,complete=v['complete']==1;
