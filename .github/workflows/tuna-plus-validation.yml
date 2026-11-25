@@ -9,6 +9,7 @@ on:
       - tuna-plus-1.1.8-pdf-render-fix
       - tuna-plus-1.1.9-pdf-text-guard
       - tuna-plus-1.1.11-copy-bank-number
+      - tuna-plus-1.1.12-expenses-sms
   workflow_dispatch:
 permissions:
   contents: read
