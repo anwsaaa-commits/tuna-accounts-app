@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - tuna-plus-1.1.10-invoice-whatsapp
+      - tuna-plus-1.1.11-copy-bank-number
 permissions:
   contents: read
 jobs:
@@ -224,7 +224,7 @@ jobs:
           echo "Verified: APK signature matches permanent release keystore."
       - uses: actions/upload-artifact@v4
         with:
-          name: tuna-plus-1.1.10-signed-release-apk
+          name: tuna-plus-1.1.11-signed-release-apk
           path: |
             build/app/outputs/flutter-apk/app-release.apk
             signing-certificate.txt
