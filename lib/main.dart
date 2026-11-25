@@ -188,20 +188,12 @@ class DB {
     final db = await database;
     final allocated = (await db.rawQuery('SELECT COALESCE(SUM(allocated_kg),0) AS kg FROM sale_batch_allocations WHERE batch_id=?',[id])).first['kg'] as num;
     if (allocated > netKg + 0.000001) throw Exception('لا يمكن تقليل الوزن الصافي إلى أقل من الكمية المباعة المرتبطة بهذه الدفعة.');
+    final current = (await db.query('private_batches',where:'id=?',whereArgs:[id],limit:1)).first;
+    if ( allocated > 0.000001 && (grossKg != (current['gross_kg'] as num).toDouble() || netKg != (current['net_kg'] as num).toDouble() || purchasePrice != (current['purchase_price'] as num).toInt()) {
+      throw Exception('هذه الدفعة مرتبطة بمبيعات؛ لا يمكن تعديل الوزن أو سعر الشراء حتى لا تتغير حسابات الربح السابقة. يمكنك تعديل الملاحظات فقط.');
+    }
     return db.update('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'note':note.trim()}, where:'id=?', whereArgs:[id]);
   }
-  Future<Map<String,num>> batchSalesSummary(int id) async {
-    final db = await database;
-    final r = (await db.rawQuery('SELECT COALESCE(SUM(a.allocated_kg),0) kg,COALESCE(SUM(a.allocated_kg*s.price),0) revenue FROM sale_batch_allocations a JOIN sales s ON s.id=a.sale_id WHERE a.batch_id=?',[id])).first;
-    final batch = (await db.query('private_batches',where:'id=?',whereArgs:[id],limit:1)).first;
-    final expenses = await expensesForBatch(id);
-    final net = batch['net_kg'] as num;
-    final sold = r['kg'] as num;
-    final cost = batch['total_cost'] as num;
-    final complete = sold >= net - 0.000001;
-    return {'soldKg':sold,'remainingKg': (net-sold).clamp(0,net),'revenue':r['revenue'] as num,'expenses':expenses,'cost':cost,'complete':complete?1:0,'profit':complete?(r['revenue'] as num)-cost-expenses:0};
-  }
-  Future<List<Map<String,Object?>>> batchSalesRows(int id) async => (await (await database).rawQuery('SELECT s.invoice,s.created,s.price,a.allocated_kg FROM sale_batch_allocations a JOIN sales s ON s.id=a.sale_id WHERE a.batch_id=? ORDER BY s.created DESC',[id]));
   Future<Map<String,num>> batchSalesSummary(int id) async {
     final db = await database;
     final r = (await db.rawQuery('SELECT COALESCE(SUM(a.allocated_kg),0) kg,COALESCE(SUM(a.allocated_kg*s.price),0) revenue FROM sale_batch_allocations a JOIN sales s ON s.id=a.sale_id WHERE a.batch_id=?',[id])).first;
