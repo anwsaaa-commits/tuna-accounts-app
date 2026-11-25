@@ -731,7 +731,6 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
     final confirm=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حذف عملية الشراء'),content:const Text('هل تريد حذف عملية الشراء؟ لا يمكن حذفها إذا كانت مرتبطة بمصروفات أو مبيعات.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حذف'))]));
     if(confirm==true){try{await DB.instance.deletePrivateBatch(id);if(mounted)setState(reloadEntries);}catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}}
   }
-  }
   Future<void> addExpense() async {
     final batches=await DB.instance.privateBatches();
     if(!mounted)return;
@@ -758,7 +757,6 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
   Future<void> removeExpense(int id) async {
     final confirm=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حذف المصروف'),content:const Text('هل تريد حذف هذا المصروف نهائيًا؟'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حذف'))]));
     if(confirm==true){try{await DB.instance.deleteExpense(id);if(mounted)setState(reloadEntries);}catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}}
-  }
   }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('حسابات الشراء والمصروفات الخاصة')),body:FutureBuilder<List<Map<String,Object?>>>(future:entries,builder:(context,s){
     if(s.hasError)return Center(child:Text('خطأ: ${s.error}'));
