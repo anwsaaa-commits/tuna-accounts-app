@@ -330,7 +330,7 @@ class _InvoicePreviewState extends State<InvoicePreview>{
   ])));
 }
 Widget _invoiceRow(String label,String value,{bool strong=false})=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[Text(label,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null),Flexible(child:Text(value,textAlign:TextAlign.end,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null))]));
-class CustomersPage extends StatefulWidget{const CustomersPage({super.key});@override State<CustomersPage> createState()=>_CustomersPageState();}
+Future<void> sendCustomerSms(BuildContext context, Map<String,Object?> client) async {\n  final phone=(client['phone'] as String? ?? '').replaceAll(RegExp(r'[^0-9+]'), '').trim();\n  if(phone.isEmpty){showMessage(context,'لا يوجد رقم هاتف مسجل لهذا العميل');return;}\n  final name=(client['name'] as String? ?? 'عميلنا').trim();\n  final body='السلام عليكم $name، نود إشعارك بأن كمية التونة الطازجة أصبحت متوفرة الآن. يسعدنا خدمتك في تونة بلس، وشكرًا لثقتك بنا.';\n  final uri=Uri(scheme:'sms',path:phone,queryParameters:{'body':body});\n  if(!await launchUrl(uri)){showMessage(context,'تعذر فتح تطبيق الرسائل');}\n}\n\nclass CustomersPage extends StatefulWidget{const CustomersPage({super.key});@override State<CustomersPage> createState()=>_CustomersPageState();}
 class _CustomersPageState extends State<CustomersPage>{
   late Future<List<Map<String,Object?>>> future;@override void initState(){super.initState();future=DB.instance.customers();}
   @override Widget build(BuildContext context)=>FutureBuilder<List<Map<String,Object?>>>(future:future,builder:(context,s)=>Column(children:[
@@ -351,7 +351,7 @@ class _CustomerLedgerState extends State<CustomerLedger>{
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.client['name'] as String)),
+      appBar: AppBar(title: Text(widget.client['name'] as String),actions:[IconButton(tooltip:'رسالة نصية SMS',icon:const Icon(Icons.sms_outlined),onPressed:()=>sendCustomerSms(context,widget.client))]),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: receivePayment,
         icon: const Icon(Icons.payments),
@@ -486,6 +486,18 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       const SizedBox(height:8),const Text('المصروفات خاصة ولا تظهر في فواتير العملاء أو كشوفهم.')
     ]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addExpense(int.parse(amount.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ المصروف'))]));
   }
+  Future<void> editExpense(Map<String,Object?> row) async {
+    final amount=TextEditingController(text:(row['amount'] as num).toString());
+    final note=TextEditingController(text:row['note'] as String? ?? '');
+    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('تعديل المصروف'),content:Column(mainAxisSize:MainAxisSize.min,children:[
+      TextField(controller:amount,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'مبلغ المصروف (ريال)')),
+      TextField(controller:note,maxLines:2,decoration:const InputDecoration(labelText:'بيان المصروف')),
+    ]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.updateExpense(row['id'] as int,int.parse(amount.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ التعديل'))]));
+  }
+  Future<void> removeExpense(int id) async {
+    final confirm=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حذف المصروف'),content:const Text('هل تريد حذف هذا المصروف نهائيًا؟'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حذف'))]));
+    if(confirm==true){await DB.instance.deleteExpense(id);if(mounted)setState(reloadEntries);}
+  }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('حسابات الشراء والمصروفات الخاصة')),body:FutureBuilder<List<Map<String,Object?>>>(future:entries,builder:(context,s){
     if(s.hasError)return Center(child:Text('خطأ: ${s.error}'));
     if(!s.hasData)return const Center(child:CircularProgressIndicator());
@@ -513,7 +525,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
           Card(child:ListTile(title:const Text('إجمالي المصروفات الخاصة'),subtitle:Text(money(expenseTotal),style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))),
           FilledButton.tonalIcon(onPressed:addExpense,icon:const Icon(Icons.add),label:const Text('إضافة مصروف')),
           if(e.data!.isNotEmpty)const Align(alignment:Alignment.centerRight,child:Text('سجل المصروفات',style:TextStyle(fontWeight:FontWeight.bold))),
-          ...e.data!.map((row)=>Card(child:ListTile(title:Text(money(row['amount'] as num)),subtitle:Text('${row['note']}\\n${dateLabel(row['created'] as String)}'),isThreeLine:true,leading:const Icon(Icons.money_off,color:gold))))
+          ...e.data!.map((row)=>Card(child:ListTile(title:Text(money(row['amount'] as num)),subtitle:Text('${row['note']}\\n${dateLabel(row['created'] as String)}'),isThreeLine:true,leading:const Icon(Icons.money_off,color:gold),trailing:PopupMenuButton<String>(tooltip:'خيارات المصروف',onSelected:(v){if(v=='edit')editExpense(row);if(v=='delete')removeExpense(row['id'] as int);},itemBuilder:(ctx)=>const [PopupMenuItem(value:'edit',child:Text('تعديل')),PopupMenuItem(value:'delete',child:Text('حذف'))]))))
         ]);
       }),
       const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
