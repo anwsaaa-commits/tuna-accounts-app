@@ -20,6 +20,14 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Download Latin fallback font for PDF rendering
+        run: |
+          set -euo pipefail
+          mkdir -p assets/fonts
+          curl -fL --retry 3 --retry-delay 2 \
+            https://raw.githubusercontent.com/notofonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf \
+            -o assets/fonts/NotoSans-Regular.ttf
+          test -s assets/fonts/NotoSans-Regular.ttf
       - name: Install dependencies
         run: flutter pub get
       - name: Analyze Dart and Flutter source
