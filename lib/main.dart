@@ -706,7 +706,7 @@ class _InvoicePreviewState extends State<InvoicePreview>{
               pw.SizedBox(height: 14),
               pw.Container(padding: const pw.EdgeInsets.all(12), decoration: pw.BoxDecoration(border: pw.Border.all(color: pdf.PdfColor.fromHex('#D8C69B')), borderRadius: pw.BorderRadius.circular(8)), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
                 pdfText('بيانات التحويل البنكي', font, fontSize: 13, color: pdf.PdfColor.fromHex('#9A742B')),
-                pdfText('بنك العميقي: $bank', font, fontSize: 10), pdfText(owner, font, fontSize: 10), pdfText('رقم الهاتف: $phone', font, fontSize: 10), pdfText('العنوان: $address', font, fontSize: 9),
+                pdfText('بنك العميقي', font, fontSize: 10),\n                pw.Center(child: pw.Text(bank, textDirection: pw.TextDirection.ltr, style: pw.TextStyle(fontSize: 17, fontWeight: pw.FontWeight.bold, color: pdf.PdfColor.fromHex('#9A742B')))),\n                pdfText('اضغط مطولاً على الرقم لتحديده ونسخه', font, fontSize: 8, color: pdf.PdfColor.fromHex('#777777'), align: ShapedTextAlign.center),\n                pdfText(owner, font, fontSize: 10), pdfText('رقم الهاتف: $phone', font, fontSize: 10), pdfText('العنوان: $address', font, fontSize: 9),
               ])),
               pw.SizedBox(height: 14),
               pw.Container(padding: const pw.EdgeInsets.symmetric(vertical: 8), decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(color: pdf.PdfColor.fromHex('#D7AF59'), width: 1.5))), child: pdfText('شكراً لثقتكم • تونة بلس', font, fontSize: 13, color: pdf.PdfColor.fromHex('#9A742B'), align: ShapedTextAlign.center)),
