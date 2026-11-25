@@ -198,15 +198,45 @@ class DB {
     return (await database).insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':(purchaseDate ?? DateTime.now()).toIso8601String(),'note':note.trim()});
   }
   Future<int> updatePrivateBatch(int id, double grossKg, int purchasePrice, double netKg, String note, {DateTime? purchaseDate}) async {
-    if (!grossKg.isFinite || !netKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
-    final db = await database;
-    final allocated = (await db.rawQuery('SELECT COALESCE(SUM(allocated_kg),0) AS kg FROM sale_batch_allocations WHERE batch_id=?',[id])).first['kg'] as num;
-    if (allocated > netKg + 0.000001) throw Exception('لا يمكن تقليل الوزن الصافي إلى أقل من الكمية المباعة المرتبطة بهذه الدفعة.');
-    final current = (await db.query('private_batches',where:'id=?',whereArgs:[id],limit:1)).first;
-    if ( allocated > 0.000001 && (grossKg != (current['gross_kg'] as num).toDouble() || netKg != (current['net_kg'] as num).toDouble() || purchasePrice != (current['purchase_price'] as num).toInt() || (purchaseDate != null && !DateTime.parse(current['created'] as String).isAtSameMomentAs(purchaseDate)))) {
-      throw Exception('هذه الدفعة مرتبطة بمبيعات؛ لا يمكن تعديل التاريخ أو الوزن أو سعر الشراء حتى لا تتغير حسابات الربح السابقة. يمكنك تعديل الملاحظات فقط.');
+    if (!grossKg.isFinite || !netKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || netKg <= 0 || netKg > grossKg) {
+      throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
     }
-    return db.update('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':(purchaseDate ?? DateTime.parse(current['created'] as String)).toIso8601String(),'note':note.trim()}, where:'id=?', whereArgs:[id]);
+    final db = await database;
+    return db.transaction<int>((txn) async {
+      // Read and validate the batch and its allocations in the same transaction
+      // so a concurrent sale cannot slip between the check and the edit.
+      final rows = await txn.query('private_batches', where:'id=?', whereArgs:[id], limit:1);
+      if (rows.isEmpty) throw Exception('عملية الشراء غير موجودة أو تم حذفها.');
+      final current = rows.first;
+      final allocationRows = await txn.rawQuery(
+        'SELECT COALESCE(SUM(allocated_kg),0) AS kg FROM sale_batch_allocations WHERE batch_id=?',[id]);
+      final allocated = allocationRows.first['kg'] as num;
+      final oldGross = (current['gross_kg'] as num).toDouble();
+      final oldNet = (current['net_kg'] as num).toDouble();
+      final oldPrice = (current['purchase_price'] as num).toInt();
+      final oldDate = DateTime.parse(current['created'] as String);
+      final newDate = purchaseDate ?? oldDate;
+      final financialFieldsChanged =
+        (grossKg - oldGross).abs() > 0.000001 ||
+        (netKg - oldNet).abs() > 0.000001 ||
+        purchasePrice != oldPrice ||
+        !newDate.isAtSameMomentAs(oldDate);
+
+      if (allocated > netKg + 0.000001) {
+        throw Exception('لا يمكن تقليل الوزن الصافي إلى أقل من الكمية المباعة المرتبطة بهذه الدفعة.');
+      }
+      if (allocated > 0.000001 && financialFieldsChanged) {
+        throw Exception('بدأ بيع هذه الدفعة بالفعل؛ لحماية تكلفة وربح الفواتير السابقة لا يمكن تغيير التاريخ أو الأوزان أو سعر الشراء. يمكنك تعديل الملاحظات فقط.');
+      }
+      return txn.update('private_batches', {
+        'gross_kg':grossKg,
+        'purchase_price':purchasePrice,
+        'total_cost':(grossKg*purchasePrice).round(),
+        'net_kg':netKg,
+        'created':newDate.toIso8601String(),
+        'note':note.trim()
+      }, where:'id=?', whereArgs:[id]);
+    });
   }
   Future<Map<String,num>> batchSalesSummary(int id) async {
     final db = await database;
