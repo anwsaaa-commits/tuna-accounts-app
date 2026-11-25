@@ -30,9 +30,14 @@ Future<void> main() async {
 String money(num value) => '${NumberFormat('#,##0', 'en').format(value)} ر.ي';
 String dateLabel(String value) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime.parse(value));
 
-// HarfBuzz shapes Arabic from Unicode using the bundled Noto Naskh font.
-// The font is loaded locally: invoices and reports work without internet access.
+// Arabic shaping font plus a cached Latin fallback for invoice IDs and symbols.
+ShapedFont? _latinPdfFallback;
 Future<ShapedFont> loadArabicPdfFont() async {
+  if (_latinPdfFallback == null) {
+    final latinData = await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
+    final latinBytes = latinData.buffer.asUint8List(latinData.offsetInBytes, latinData.lengthInBytes);
+    _latinPdfFallback = ShapedFont.fromBytes(latinBytes, name: 'Noto Sans Latin');
+  }
   final data = await rootBundle.load('assets/fonts/NotoNaskhArabic-Regular.ttf');
   final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
   return ShapedFont.fromBytes(bytes, name: 'Noto Naskh Arabic');
@@ -48,6 +53,7 @@ pw.Widget pdfText(
   sanitizePdfText(value),
   style: ShapedTextStyle(
     font: font,
+    fallbackFonts: _latinPdfFallback == null ? const [] : [_latinPdfFallback!],
     fontSize: fontSize,
     color: color ?? pdf.PdfColors.black,
     direction: ShapedTextDirection.auto,
