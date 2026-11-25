@@ -208,7 +208,7 @@ class DB {
   Future<List<Map<String,Object?>>> batchSalesRows(int id) async => (await (await database).rawQuery('SELECT s.invoice,s.created,s.price,a.allocated_kg FROM sale_batch_allocations a JOIN sales s ON s.id=a.sale_id WHERE a.batch_id=? ORDER BY s.created DESC',[id]));
   Future<num> unallocatedSalesKg() async {
     final db = await database;
-    final result = await db.rawQuery('SELECT COALESCE(SUM(MAX(s.kg-COALESCE(a.allocated,0),0)),0) AS kg FROM sales s LEFT JOIN (SELECT sale_id,SUM(allocated_kg) allocated FROM sale_batch_allocations GROUP BY sale_id) a ON a.sale_id=s.id');
+    final result = await db.rawQuery('SELECT COALESCE(SUM(CASE WHEN s.kg-COALESCE(a.allocated,0)>0 THEN s.kg-COALESCE(a.allocated,0) ELSE 0 END),0) AS kg FROM sales s LEFT JOIN (SELECT sale_id,SUM(allocated_kg) allocated FROM sale_batch_allocations GROUP BY sale_id) a ON a.sale_id=s.id');
     return result.first['kg'] as num;
   }
 
@@ -612,6 +612,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
         Text('تاريخ الشراء: ${dateLabel(row['created'] as String)}'),
         Text('الوزن الصافي: ${(row['net_kg'] as num).toStringAsFixed(2)} كجم'),
         Text('تكلفة الشراء: ${money(row['total_cost'] as num)}'),
+        const Text('تخصيص المبيعات آليًا حسب أقدم دفعة مسجلة (FIFO). إذا كان لديك مخزون قديم غير مسجل عند بدء التتبع، فقد يؤثر على دقة نسبة المبيعات لهذه الدفعة؛ راجع الكمية غير المخصصة في صفحة الشراء.'),
         FutureBuilder<Map<String,num>>(future:summaryFuture,builder:(context,s){
           if(!s.hasData)return const Padding(padding:EdgeInsets.all(12),child:LinearProgressIndicator());
           final v=s.data!,complete=v['complete']==1;
