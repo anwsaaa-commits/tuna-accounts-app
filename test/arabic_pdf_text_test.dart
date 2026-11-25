@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf_text_shaper/pdf_text_shaper.dart';
 import '../lib/pdf_text_utils.dart';
+import '../lib/main.dart' as app;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -13,6 +14,19 @@ void main() {
     final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
     return ShapedFont.fromBytes(bytes, name: name);
   }
+
+  test('normalizes Yemen local and international WhatsApp numbers', () {
+    expect(app.normalizeWhatsAppNumber('777521058'), '967777521058');
+    expect(app.normalizeWhatsAppNumber('0777521058'), '967777521058');
+    expect(app.normalizeWhatsAppNumber('+967 777 521 058'), '967777521058');
+  });
+
+  test('arrival message includes reservation weight and customer', () {
+    final message = app.reservationArrivalMessage('أحمد', 3.5);
+    expect(message, contains('أحمد'));
+    expect(message, contains('3.500'));
+    expect(message, contains('قد وصلت'));
+  });
 
   test('Arabic font supports Arabic labels and digits', () async {
     final font = await loadFont('assets/fonts/NotoNaskhArabic-Regular.ttf', 'Noto Naskh Arabic');
