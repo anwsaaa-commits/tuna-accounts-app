@@ -189,7 +189,7 @@ class DB {
     final allocated = (await db.rawQuery('SELECT COALESCE(SUM(allocated_kg),0) AS kg FROM sale_batch_allocations WHERE batch_id=?',[id])).first['kg'] as num;
     if (allocated > netKg + 0.000001) throw Exception('لا يمكن تقليل الوزن الصافي إلى أقل من الكمية المباعة المرتبطة بهذه الدفعة.');
     final current = (await db.query('private_batches',where:'id=?',whereArgs:[id],limit:1)).first;
-    if ( allocated > 0.000001 && (grossKg != (current['gross_kg'] as num).toDouble() || netKg != (current['net_kg'] as num).toDouble() || purchasePrice != (current['purchase_price'] as num).toInt()) {
+    if ( allocated > 0.000001 && (grossKg != (current['gross_kg'] as num).toDouble() || netKg != (current['net_kg'] as num).toDouble() || purchasePrice != (current['purchase_price'] as num).toInt())) {
       throw Exception('هذه الدفعة مرتبطة بمبيعات؛ لا يمكن تعديل الوزن أو سعر الشراء حتى لا تتغير حسابات الربح السابقة. يمكنك تعديل الملاحظات فقط.');
     }
     return db.update('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'note':note.trim()}, where:'id=?', whereArgs:[id]);
