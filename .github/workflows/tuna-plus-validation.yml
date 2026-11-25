@@ -8,7 +8,7 @@ on:
       - tuna-plus-1.1.7-pdf-fix
       - tuna-plus-1.1.8-pdf-render-fix
       - tuna-plus-1.1.9-pdf-text-guard
-      - tuna-plus-1.1.10-invoice-whatsapp
+      - tuna-plus-1.1.11-copy-bank-number
   workflow_dispatch:
 permissions:
   contents: read
