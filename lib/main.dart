@@ -344,6 +344,19 @@ class _InvoicePreviewState extends State<InvoicePreview>{
   ])));
 }
 Widget _invoiceRow(String label,String value,{bool strong=false})=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[Text(label,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null),Flexible(child:Text(value,textAlign:TextAlign.end,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null))]));
+Future<void> sendCustomerWhatsApp(BuildContext context, Map<String,Object?> client) async {
+  final raw=(client['phone'] as String? ?? '').trim();
+  var phone=raw.replaceAll(RegExp(r'[^0-9]'), '');
+  if(phone.startsWith('00967')) phone=phone.substring(5);
+  else if(phone.startsWith('967')) phone=phone.substring(3);
+  else if(phone.startsWith('0')) phone=phone.substring(1);
+  if(phone.isEmpty){showMessage(context,'لا يوجد رقم هاتف مسجل لهذا العميل');return;}
+  if(phone.length==9) phone='967$phone';
+  final name=(client['name'] as String? ?? 'عميلنا').trim();
+  final message='السلام عليكم $name، نود إشعارك بأن كمية التونة الطازجة أصبحت متوفرة الآن. يسعدنا خدمتك في تونة بلس، وشكرًا لثقتك بنا.';
+  final uri=Uri.https('wa.me','/$phone',{'text':message});
+  if(!await launchUrl(uri,mode:LaunchMode.externalApplication)){showMessage(context,'تعذر فتح واتساب');}
+}
 Future<void> sendCustomerSms(BuildContext context, Map<String,Object?> client) async {
   final rawPhone=(client['phone'] as String? ?? '').trim();
   var phone=rawPhone.replaceAll(RegExp(r'[^0-9+]'), '');
@@ -381,7 +394,10 @@ class _CustomerLedgerState extends State<CustomerLedger>{
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.client['name'] as String),actions:[IconButton(tooltip:'رسالة نصية SMS',icon:const Icon(Icons.sms_outlined),onPressed:()=>sendCustomerSms(context,widget.client))]),
+      appBar: AppBar(title: Text(widget.client['name'] as String),actions:[
+        IconButton(tooltip:'واتساب',icon:const Icon(Icons.chat_outlined),onPressed:()=>sendCustomerWhatsApp(context,widget.client)),
+        IconButton(tooltip:'رسالة نصية SMS',icon:const Icon(Icons.sms_outlined),onPressed:()=>sendCustomerSms(context,widget.client))
+      ]),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: receivePayment,
         icon: const Icon(Icons.payments),
