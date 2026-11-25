@@ -12,6 +12,7 @@ import 'package:printing/printing.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:permission_handler/permission_handler.dart' as permissions;
 import 'package:pdf_text_shaper/pdf_text_shaper.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'pdf_text_utils.dart';
 
 const gold = Color(0xFFD7AF59);
@@ -29,6 +30,17 @@ Future<void> main() async {
 }
 String money(num value) => '${NumberFormat('#,##0', 'en').format(value)} ر.ي';
 String dateLabel(String value) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime.parse(value));
+
+String normalizeWhatsAppNumber(String raw) {
+  var digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.startsWith('00')) digits = digits.substring(2);
+  if (digits.startsWith('967')) return digits;
+  if (digits.startsWith('0')) digits = digits.substring(1);
+  return '967$digits';
+}
+String reservationArrivalMessage(String customerName, num kg) =>
+    'مرحباً ' + customerName + '، نبلغك من تونة بلس أن الكمية المحجوزة (' + kg.toStringAsFixed(3) + ' كجم) قد وصلت. يمكنك التواصل معنا لتأكيد الاستلام. شكراً لك.';
+
 
 // Arabic shaping font plus a cached Latin fallback for invoice IDs and symbols.
 ShapedFont? _latinPdfFallback;
@@ -528,6 +540,18 @@ class _ReservationsPageState extends State<ReservationsPage> {
   late Future<List<Map<String,Object?>>> future;
   @override void initState(){super.initState();future=DB.instance.reservations();}
   void reload()=>setState(()=>future=DB.instance.reservations());
+  Future<void> notifyArrival(Map<String,Object?> reservation) async {
+    final phone = (reservation['phone'] as String? ?? '').trim();
+    if (phone.isEmpty) { showMessage(context, 'لا يوجد رقم هاتف لهذا الحجز'); return; }
+    final customer = reservation['customer_name'] as String? ?? 'عميلنا العزيز';
+    final number = normalizeWhatsAppNumber(phone);
+    final message = reservationArrivalMessage(customer, reservation['kg'] as num);
+    final uri = Uri.https('wa.me', '/$number', {'text': message});
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) showMessage(context, 'تعذر فتح واتساب');
+    } catch (_) { if (mounted) showMessage(context, 'تعذر فتح واتساب'); }
+  }
   Future<void> add() async {
     final name=TextEditingController(),phone=TextEditingController(),kg=TextEditingController(),price=TextEditingController(text:'6500'),deposit=TextEditingController(text:'0'),note=TextEditingController();
     await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حجز كمية قادمة'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
@@ -584,6 +608,7 @@ class _ReservationsPageState extends State<ReservationsPage> {
         if((r['note'] as String? ?? '').isNotEmpty)Text('ملاحظات: ${r['note']}'),
         Row(children:[
           Expanded(child:DropdownButton<String>(isExpanded:true,value:r['status'] as String,items:['بانتظار وصول الكمية','مؤكد','تم التسليم','ملغي'].map((v)=>DropdownMenuItem(value:v,child:Text(v,overflow:TextOverflow.ellipsis))).toList(),onChanged:(v)async{if(v!=null){await DB.instance.updateReservationStatus(r['id'] as int,v);reload();}})),
+          IconButton(tooltip:'إشعار وصول عبر واتساب',onPressed:()=>notifyArrival(r),icon:const Icon(Icons.notifications_active_outlined,color:Colors.green)),
           IconButton(tooltip:'حذف الحجز',onPressed:()async{await DB.instance.deleteReservation(r['id'] as int);reload();},icon:const Icon(Icons.delete_outline,color:Colors.red))
         ])
       ])))).toList(),
@@ -629,65 +654,62 @@ class _InvoicePreviewState extends State<InvoicePreview>{
       final total = sale['total'] as num;
       final paid = sale['paid'] as num;
       final due = total - paid;
+      final logoData = await rootBundle.load('assets/tuna_plus_crown_icon.png');
+      final logoBytes = logoData.buffer.asUint8List(logoData.offsetInBytes, logoData.lengthInBytes);
+      final logo = pw.MemoryImage(logoBytes);
       final doc = pw.Document();
 
       doc.addPage(pw.Page(
         pageFormat: pdf.PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
+        margin: const pw.EdgeInsets.all(26),
         build: (_) => pw.Directionality(
           textDirection: pw.TextDirection.rtl,
           child: pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.stretch,
             children: [
               pw.Container(
-                padding: const pw.EdgeInsets.all(16),
-                decoration: pw.BoxDecoration(color: pdf.PdfColor.fromHex('#161616')),
-                child: pw.Column(children: [
-                  pdfText(shop, font, fontSize: 24, color: pdf.PdfColor.fromHex('#D7AF59'), align: ShapedTextAlign.center),
-                  pdfText('فاتورة مبيعات • تونة بلس', font, fontSize: 13, color: pdf.PdfColor.fromHex('#D7AF59'), align: ShapedTextAlign.center),
-                ]),
-              ),
-              pw.SizedBox(height: 18),
-              pdfText('رقم الفاتورة: ${sale['invoice']}', font, fontSize: 12),
-              pdfText('التاريخ: ${(sale['created'] as String).substring(0,16).replaceFirst('T',' ')}', font),
-              pdfText('العميل: ${client?['name'] ?? 'عميل نقدي'}', font),
-              pw.SizedBox(height: 14),
-              pw.Table(
-                border: pw.TableBorder.all(color: pdf.PdfColor.fromHex('#C8B58C'), width: 0.6),
-                children: [
-                  pw.TableRow(
-                    decoration: pw.BoxDecoration(color: pdf.PdfColor.fromHex('#2C2924')),
-                    children: [
-                      pdfCell('الوزن (كجم)', font, header: true),
-                      pdfCell('سعر الكيلو', font, header: true),
-                      pdfCell('الإجمالي', font, header: true),
-                    ],
-                  ),
-                  pw.TableRow(children: [
-                    pdfCell(sale['kg'].toString(), font),
-                    pdfCell(money(sale['price'] as num), font),
-                    pdfCell(money(total), font),
-                  ]),
-                ],
-              ),
-              pw.SizedBox(height: 16),
-              pdfText('الإجمالي: ${money(total)}', font, fontSize: 14),
-              pdfText('المدفوع: ${money(paid)}', font),
-              pdfText('المتبقي: ${money(due)}', font, fontSize: 13),
-              if ((sale['note'] as String? ?? '').isNotEmpty)
-                pw.Padding(
-                  padding: const pw.EdgeInsets.only(top: 10),
-                  child: pdfText('ملاحظات: ${sale['note']}', font),
+                padding: const pw.EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                decoration: pw.BoxDecoration(color: pdf.PdfColor.fromHex('#111111'), borderRadius: pw.BorderRadius.circular(12)),
+                child: pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Container(width: 82, height: 82, decoration: pw.BoxDecoration(color: pdf.PdfColor.fromHex('#FFFFFF'), borderRadius: pw.BorderRadius.circular(8)), padding: const pw.EdgeInsets.all(4), child: pw.Image(logo, fit: pw.BoxFit.contain)),
+                    pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
+                      pdfText(shop, font, fontSize: 25, color: pdf.PdfColor.fromHex('#D7AF59')),
+                      pdfText('فاتورة مبيعات • ثمد طازج', font, fontSize: 12, color: pdf.PdfColor.fromHex('#F4E8CF')),
+                      pdfText('TUNA PLUS', font, fontSize: 10, color: pdf.PdfColor.fromHex('#D7AF59')),
+                    ])),
+                  ],
                 ),
-              pw.SizedBox(height: 22),
-              pw.Divider(),
-              pdfText('بيانات التحويل البنكي', font, fontSize: 14, color: pdf.PdfColor.fromHex('#9A742B')),
-              pdfText('بنك العميقي: $bank', font),
-              pdfText(owner, font),
-              pdfText('رقم الهاتف: $phone', font),
-              pdfText('العنوان: $address', font),
-              pw.SizedBox(height: 18),
-              pdfText('شكراً لثقتكم • تونة بلس', font, fontSize: 13, align: ShapedTextAlign.center),
+              ),
+              pw.SizedBox(height: 12),
+              pw.Container(padding: const pw.EdgeInsets.all(12), decoration: pw.BoxDecoration(color: pdf.PdfColor.fromHex('#F7F3EA'), border: pw.Border.all(color: pdf.PdfColor.fromHex('#D8C69B'), width: 0.8), borderRadius: pw.BorderRadius.circular(8)), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+                pdfText('رقم الفاتورة: ${sale['invoice']}', font, fontSize: 10),
+                pdfText('التاريخ: ${(sale['created'] as String).substring(0,16).replaceFirst('T',' ')}', font, fontSize: 10),
+                pdfText('العميل: ${client?['name'] ?? 'عميل نقدي'}', font, fontSize: 11),
+              ])),
+              pw.SizedBox(height: 14),
+              pw.Table(border: pw.TableBorder.all(color: pdf.PdfColor.fromHex('#C8B58C'), width: 0.6), children: [
+                pw.TableRow(decoration: pw.BoxDecoration(color: pdf.PdfColor.fromHex('#2C2924')), children: [
+                  pdfCell('الوزن (كجم)', font, header: true), pdfCell('سعر الكيلو', font, header: true), pdfCell('الإجمالي', font, header: true),
+                ]),
+                pw.TableRow(children: [pdfCell(sale['kg'].toString(), font), pdfCell(money(sale['price'] as num), font), pdfCell(money(total), font)]),
+              ]),
+              pw.SizedBox(height: 14),
+              pw.Container(padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 12), decoration: pw.BoxDecoration(color: pdf.PdfColor.fromHex('#171717'), borderRadius: pw.BorderRadius.circular(8)), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+                pdfText('الإجمالي: ${money(total)}', font, fontSize: 15, color: pdf.PdfColor.fromHex('#D7AF59')),
+                pdfText('المدفوع: ${money(paid)}', font, fontSize: 11, color: pdf.PdfColor.fromHex('#FFFFFF')),
+                pdfText('المتبقي: ${money(due)}', font, fontSize: 13, color: pdf.PdfColor.fromHex('#F4E8CF')),
+              ])),
+              if ((sale['note'] as String? ?? '').isNotEmpty) pw.Container(margin: const pw.EdgeInsets.only(top: 10), padding: const pw.EdgeInsets.all(9), decoration: pw.BoxDecoration(border: pw.Border.all(color: pdf.PdfColor.fromHex('#D8C69B')), borderRadius: pw.BorderRadius.circular(6)), child: pdfText('ملاحظات: ${sale['note']}', font, fontSize: 10)),
+              pw.SizedBox(height: 14),
+              pw.Container(padding: const pw.EdgeInsets.all(12), decoration: pw.BoxDecoration(border: pw.Border.all(color: pdf.PdfColor.fromHex('#D8C69B')), borderRadius: pw.BorderRadius.circular(8)), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+                pdfText('بيانات التحويل البنكي', font, fontSize: 13, color: pdf.PdfColor.fromHex('#9A742B')),
+                pdfText('بنك العميقي: $bank', font, fontSize: 10), pdfText(owner, font, fontSize: 10), pdfText('رقم الهاتف: $phone', font, fontSize: 10), pdfText('العنوان: $address', font, fontSize: 9),
+              ])),
+              pw.SizedBox(height: 14),
+              pw.Container(padding: const pw.EdgeInsets.symmetric(vertical: 8), decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(color: pdf.PdfColor.fromHex('#D7AF59'), width: 1.5))), child: pdfText('شكراً لثقتكم • تونة بلس', font, fontSize: 13, color: pdf.PdfColor.fromHex('#9A742B'), align: ShapedTextAlign.center)),
             ],
           ),
         ),
