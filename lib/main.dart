@@ -228,23 +228,32 @@ class DB {
 
   Future<int> deletePrivateBatch(int id) async {
     final db = await database;
-    final linkedExpenses = (await db.rawQuery('SELECT COUNT(*) AS n FROM expenses WHERE batch_id=?',[id])).first['n'] as int;
-    final linkedSales = (await db.rawQuery('SELECT COUNT(*) AS n FROM sale_batch_allocations WHERE batch_id=?',[id])).first['n'] as int;
-    if (linkedExpenses > 0) throw Exception('لا يمكن حذف عملية الشراء لوجود مصروفات مرتبطة بها. احذف أو أعد ربط المصروفات أولاً.');
-    if (linkedSales > 0) throw Exception('لا يمكن حذف عملية الشراء لأنها مرتبطة بمبيعات. حفاظًا على دقة المخزون، لا يمكن حذفها.');
-    return db.delete('private_batches', where:'id=?', whereArgs:[id]);
+    return db.transaction<int>((txn) async {
+      final batch = await txn.query('private_batches', columns:['id'], where:'id=?', whereArgs:[id], limit:1);
+      if (batch.isEmpty) throw Exception('عملية الشراء غير موجودة أو سبق حذفها.');
+      final linkedExpenses = (await txn.rawQuery('SELECT COUNT(*) AS n FROM expenses WHERE batch_id=?',[id])).first['n'] as int;
+      final linkedSales = (await txn.rawQuery('SELECT COUNT(*) AS n FROM sale_batch_allocations WHERE batch_id=?',[id])).first['n'] as int;
+      if (linkedExpenses > 0) throw Exception('لا يمكن حذف عملية الشراء لوجود مصروفات مرتبطة بها. احذف أو أعد ربط المصروفات أولاً.');
+      if (linkedSales > 0) throw Exception('لا يمكن حذف عملية الشراء لأنها مرتبطة بمبيعات. حفاظًا على دقة المخزون، لا يمكن حذفها.');
+      return txn.delete('private_batches', where:'id=?', whereArgs:[id]);
+    });
   }
   Future<void> deleteSale(int id) async {
     final db = await database;
-    final sale = (await db.query('sales',where:'id=?',whereArgs:[id])).first;
-    final cid = sale['customer_id'];
-    if (cid != null) {
-      final remaining = (await db.rawQuery('SELECT COALESCE(SUM(total-paid),0) v FROM sales WHERE customer_id=?',[cid])).first['v'] as num;
-      final collected = (await db.rawQuery('SELECT COALESCE(SUM(amount),0) v FROM collections WHERE customer_id=?',[cid])).first['v'] as num;
-      final saleOutstanding = (sale['total'] as num) - (sale['paid'] as num);
-      if (collected > remaining - saleOutstanding) throw Exception('لا يمكن حذف الفاتورة؛ توجد تحصيلات لا يمكن ربطها بعد الحذف.');
-    }
-    await db.transaction((txn) async { await txn.delete('sale_batch_allocations',where:'sale_id=?',whereArgs:[id]); await txn.delete('sales',where:'id=?',whereArgs:[id]); });
+    await db.transaction((txn) async {
+      final rows = await txn.query('sales',where:'id=?',whereArgs:[id],limit:1);
+      if (rows.isEmpty) throw Exception('الفاتورة غير موجودة أو سبق حذفها.');
+      final sale = rows.first;
+      final cid = sale['customer_id'];
+      if (cid != null) {
+        final remaining = (await txn.rawQuery('SELECT COALESCE(SUM(total-paid),0) v FROM sales WHERE customer_id=?',[cid])).first['v'] as num;
+        final collected = (await txn.rawQuery('SELECT COALESCE(SUM(amount),0) v FROM collections WHERE customer_id=?',[cid])).first['v'] as num;
+        final saleOutstanding = (sale['total'] as num) - (sale['paid'] as num);
+        if (collected > remaining - saleOutstanding) throw Exception('لا يمكن حذف الفاتورة؛ توجد تحصيلات لا يمكن ربطها بعد الحذف.');
+      }
+      await txn.delete('sale_batch_allocations',where:'sale_id=?',whereArgs:[id]);
+      await txn.delete('sales',where:'id=?',whereArgs:[id]);
+    });
   }
 }
 void showMessage(BuildContext context, String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(text)));
