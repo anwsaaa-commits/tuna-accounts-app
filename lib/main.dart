@@ -103,7 +103,7 @@ class DB {
     if (name.trim().isEmpty) throw Exception('اسم العميل مطلوب');
     return (await database).insert('customers', {'name':name.trim(),'phone':phone.trim(),'note':note.trim()});
   }
-  Future<int> addSale(int? customerId, double kg, int price, int paid, String type, String note) async {
+  Future<int> addSale(int? customerId, double kg, int price, int paid, String type, String note, {int? batchId}) async {
     if (!kg.isFinite || kg <= 0 || price <= 0 || paid < 0) throw Exception('تحقق من الوزن والسعر والمدفوع');
     if (type != 'نقدي' && type != 'آجل') throw Exception('نوع البيع غير صحيح');
     if (type == 'آجل' && customerId == null) throw Exception('البيع الآجل يتطلب اختيار عميل لتسجيل الدين في كشف حسابه');
@@ -113,22 +113,19 @@ class DB {
     if (type == 'نقدي' && paid != total) throw Exception('البيع النقدي يجب أن يكون مدفوعاً بالكامل');
     final db = await database;
     return db.transaction<int>((txn) async {
+      if (batchId != null) {
+        final batchRows = await txn.rawQuery('SELECT b.net_kg,COALESCE(SUM(a.allocated_kg),0) sold FROM private_batches b LEFT JOIN sale_batch_allocations a ON a.batch_id=b.id WHERE b.id=? GROUP BY b.id',[batchId]);
+        if (batchRows.isEmpty) throw Exception('دفعة الشراء المحددة غير موجودة');
+        final remaining = ((batchRows.first['net_kg'] as num) - (batchRows.first['sold'] as num)).toDouble();
+        if (kg > remaining + 0.000001) throw Exception('الوزن يتجاوز المتبقي في الدفعة المحددة (${remaining.toStringAsFixed(3)} كجم)');
+      }
       final saleId = await txn.insert('sales', {
         'invoice':'TP-${DateTime.now().microsecondsSinceEpoch}','customer_id':customerId,
         'kg':kg,'price':price,'total':total,'paid':paid,'kind':type,'note':note.trim(),
         'created':DateTime.now().toIso8601String()
       });
-      // FIFO allocations: historical sales and old untracked stock are never guessed.
-      final batches = await txn.rawQuery('SELECT b.id,b.net_kg,COALESCE(SUM(a.allocated_kg),0) allocated FROM private_batches b LEFT JOIN sale_batch_allocations a ON a.batch_id=b.id GROUP BY b.id ORDER BY b.created ASC,b.id ASC');
-      var toAllocate = kg;
-      for (final batch in batches) {
-        if (toAllocate <= 0.000001) break;
-        final available = ((batch['net_kg'] as num) - (batch['allocated'] as num)).toDouble();
-        if (available <= 0.000001) continue;
-        final allocation = available < toAllocate ? available : toAllocate;
-        await txn.insert('sale_batch_allocations', {'sale_id':saleId,'batch_id':batch['id'],'allocated_kg':allocation});
-        toAllocate -= allocation;
-      }
+      // Explicit batch selection only; null is old/untracked stock.
+      if (batchId != null) await txn.insert('sale_batch_allocations', {'sale_id':saleId,'batch_id':batchId,'allocated_kg':kg});
       return saleId;
     });
   }
@@ -163,6 +160,10 @@ class DB {
   }
   Future<void> setSetting(String key, String value) async => (await database).insert('settings', {'key':key,'value':value}, conflictAlgorithm: ConflictAlgorithm.replace);
   Future<List<Map<String,Object?>>> privateBatches() async => (await database).query('private_batches', orderBy: 'created DESC');
+  Future<List<Map<String,Object?>>> privateBatchesWithRemaining() async {
+    final db = await database;
+    return db.rawQuery('SELECT b.*,COALESCE(SUM(a.allocated_kg),0) sold_kg,(b.net_kg-COALESCE(SUM(a.allocated_kg),0)) remaining_kg FROM private_batches b LEFT JOIN sale_batch_allocations a ON a.batch_id=b.id GROUP BY b.id ORDER BY b.created DESC,b.id DESC');
+  }
   Future<List<Map<String,Object?>>> expenses() async => (await database).query('expenses', orderBy: 'created DESC');
   Future<int> addExpense(int amount, String note, {int? batchId}) async {
     if (amount <= 0) throw Exception('أدخل مبلغ مصروف صحيح');
@@ -314,25 +315,32 @@ Future<void> newCustomer(BuildContext context) async {
 }
 
 Future<void> newSale(BuildContext context) async {
-  final clients=await DB.instance.customers();if(!context.mounted)return;
+  final clients=await DB.instance.customers();
+  final batches=await DB.instance.privateBatchesWithRemaining();
+  if(!context.mounted)return;
   int? customerId=clients.isEmpty?null:clients.first['id'] as int;
+  int sourceId=-1;
   final kgCtrl=TextEditingController(),priceCtrl=TextEditingController(text:await DB.instance.setting('price','6500')),paidCtrl=TextEditingController(),noteCtrl=TextEditingController();
   String type='نقدي';
   await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('بيع تونة'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
     DropdownButtonFormField<int>(initialValue:customerId,decoration:const InputDecoration(labelText:'العميل (اختياري)'),items:clients.map((c)=>DropdownMenuItem<int>(value:c['id'] as int,child:Text(c['name'] as String))).toList(),onChanged:(v)=>setDialog(()=>customerId=v)),
+    DropdownButtonFormField<int>(initialValue:sourceId,decoration:const InputDecoration(labelText:'مصدر الكمية المباعة'),items:[
+      const DropdownMenuItem<int>(value:-1,child:Text('مخزون قديم / غير مسجل')),
+      ...batches.where((b)=>(b['remaining_kg'] as num)>0.000001).map((b)=>DropdownMenuItem<int>(value:b['id'] as int,child:Text('شراء ${dateLabel(b['created'] as String)} • متبقي ${(b['remaining_kg'] as num).toStringAsFixed(2)} كجم'))),
+    ],onChanged:(v)=>setDialog(()=>sourceId=v??-1)),
     TextField(controller:kgCtrl,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن بالكيلو')),
     TextField(controller:priceCtrl,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو')),
     TextField(controller:paidCtrl,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'المدفوع')),
     DropdownButtonFormField<String>(initialValue:type,decoration:const InputDecoration(labelText:'نوع البيع'),items:['نقدي','آجل'].map((x)=>DropdownMenuItem<String>(value:x,child:Text(x))).toList(),onChanged:(v)=>setDialog(()=>type=v??'نقدي')),
     TextField(controller:noteCtrl,decoration:const InputDecoration(labelText:'ملاحظات')),
+    const Padding(padding:EdgeInsets.only(top:8),child:Text('مبيعات المخزون القديم لا تدخل في كشف أرباح دفعات الشراء. اختر دفعة محددة لربط البيع بها.',style:TextStyle(fontSize:12))),
   ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{
     final weight=double.parse(kgCtrl.text),price=int.parse(priceCtrl.text),total=(weight*price).round();
     final paid=paidCtrl.text.trim().isEmpty?(type=='نقدي'?total:0):int.parse(paidCtrl.text);
-    await DB.instance.addSale(customerId,weight,price,paid,type,noteCtrl.text);await DB.instance.setSetting('price',price.toString());
+    await DB.instance.addSale(customerId,weight,price,paid,type,noteCtrl.text,batchId:sourceId==-1?null:sourceId);await DB.instance.setSetting('price',price.toString());
     if(ctx.mounted)Navigator.pop(ctx);if(context.mounted)showMessage(context,'تم حفظ البيع بنجاح');
   }catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ البيع'))])));
 }
-
 class InvoicePage extends StatefulWidget{const InvoicePage({super.key});@override State<InvoicePage> createState()=>_InvoicePageState();}
 class _InvoicePageState extends State<InvoicePage>{
   late Future<List<Map<String,Object?>>> future;@override void initState(){super.initState();future=DB.instance.sales();}
