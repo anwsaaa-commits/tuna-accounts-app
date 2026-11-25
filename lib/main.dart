@@ -183,16 +183,16 @@ class DB {
     if (!grossKg.isFinite || !netKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
     return (await database).insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':(purchaseDate ?? DateTime.now()).toIso8601String(),'note':note.trim()});
   }
-  Future<int> updatePrivateBatch(int id, double grossKg, int purchasePrice, double netKg, String note) async {
+  Future<int> updatePrivateBatch(int id, double grossKg, int purchasePrice, double netKg, String note, {DateTime? purchaseDate}) async {
     if (!grossKg.isFinite || !netKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
     final db = await database;
     final allocated = (await db.rawQuery('SELECT COALESCE(SUM(allocated_kg),0) AS kg FROM sale_batch_allocations WHERE batch_id=?',[id])).first['kg'] as num;
     if (allocated > netKg + 0.000001) throw Exception('لا يمكن تقليل الوزن الصافي إلى أقل من الكمية المباعة المرتبطة بهذه الدفعة.');
     final current = (await db.query('private_batches',where:'id=?',whereArgs:[id],limit:1)).first;
-    if ( allocated > 0.000001 && (grossKg != (current['gross_kg'] as num).toDouble() || netKg != (current['net_kg'] as num).toDouble() || purchasePrice != (current['purchase_price'] as num).toInt())) {
+    if ( allocated > 0.000001 && (grossKg != (current['gross_kg'] as num).toDouble() || netKg != (current['net_kg'] as num).toDouble() || purchasePrice != (current['purchase_price'] as num).toInt() || (purchaseDate != null && !DateTime.parse(current['created'] as String).isAtSameMomentAs(purchaseDate)))) {
       throw Exception('هذه الدفعة مرتبطة بمبيعات؛ لا يمكن تعديل الوزن أو سعر الشراء حتى لا تتغير حسابات الربح السابقة. يمكنك تعديل الملاحظات فقط.');
     }
-    return db.update('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'note':note.trim()}, where:'id=?', whereArgs:[id]);
+    return db.update('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':(purchaseDate ?? DateTime.parse(current['created'] as String)).toIso8601String(),'note':note.trim()}, where:'id=?', whereArgs:[id]);
   }
   Future<Map<String,num>> batchSalesSummary(int id) async {
     final db = await database;
@@ -631,13 +631,15 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
     final price=TextEditingController(text:(row['purchase_price'] as num).toString());
     final net=TextEditingController(text:(row['net_kg'] as num).toString());
     final note=TextEditingController(text:row['note'] as String? ?? '');
-    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('تعديل عملية شراء'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+    DateTime purchaseDate=DateTime.parse(row['created'] as String);
+    await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('تعديل عملية شراء'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
       TextField(controller:gross,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الإجمالي (كجم)')),
       TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر شراء الكيلو (ريال)')),
       TextField(controller:net,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الصافي (كجم)')),
+      ListTile(contentPadding:EdgeInsets.zero,title:const Text('تاريخ الشراء'),subtitle:Text(DateFormat('yyyy/MM/dd').format(purchaseDate)),trailing:IconButton(icon:const Icon(Icons.calendar_month),tooltip:'تعديل تاريخ الشراء',onPressed:()async{final selected=await showDatePicker(context:ctx,initialDate:purchaseDate,firstDate:DateTime(2020),lastDate:DateTime(2100));if(selected!=null)setDialog(()=>purchaseDate=DateTime(selected.year,selected.month,selected.day,purchaseDate.hour,purchaseDate.minute));})),
       TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظات')),
-      const SizedBox(height:6),const Text('تاريخ الشراء محفوظ كما هو.')
-    ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.updatePrivateBatch(row['id'] as int,double.parse(gross.text),int.parse(price.text),double.parse(net.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ التعديل'))]));
+      const SizedBox(height:6),const Text('إذا كانت الدفعة مرتبطة بمبيعات، لن يسمح بتغيير التاريخ أو الوزن أو سعر الشراء حفاظًا على دقة الكشف.')
+    ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.updatePrivateBatch(row['id'] as int,double.parse(gross.text),int.parse(price.text),double.parse(net.text),note.text,purchaseDate:purchaseDate);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ التعديل'))])));
   }
   Future<void> removeBatch(int id) async {
     final confirm=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حذف عملية الشراء'),content:const Text('هل تريد حذف عملية الشراء؟ لا يمكن حذفها إذا كانت مرتبطة بمصروفات.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حذف'))]));
