@@ -38,6 +38,15 @@ String normalizeWhatsAppNumber(String raw) {
   if (digits.startsWith('0')) digits = digits.substring(1);
   return '967$digits';
 }
+String normalizeYemeniSmsNumber(String raw) {
+  var phone = raw.replaceAll(RegExp(r'[^0-9+]'), '');
+  if (phone.startsWith('00967')) return '+967' + phone.substring(5);
+  if (phone.startsWith('967')) return '+' + phone;
+  if (phone.startsWith('0')) return '+967' + phone.substring(1);
+  if (!phone.startsWith('+') && phone.length == 9) return '+967' + phone;
+  return phone;
+}
+
 String reservationArrivalMessage(String customerName, num kg) =>
     'مرحباً ' + customerName + '، نبلغك من تونة بلس أن الكمية المحجوزة (' + kg.toStringAsFixed(3) + ' كجم) قد وصلت. يمكنك التواصل معنا لتأكيد الاستلام. شكراً لك.\\n\\n📲 مراسلة تونــه بلــس عبر واتساب. https://wa.me/967733099270';
 
@@ -252,6 +261,13 @@ class DB {
     if (note.trim().isEmpty) throw Exception('اكتب بيان المصروف حتى يسهل مراجعته');
     return (await database).insert('expenses', {'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()});
   }
+  Future<int> updateExpense(int id, int amount, String note) async {
+    if (amount <= 0) throw Exception('أدخل مبلغ مصروف صحيح');
+    if (note.trim().isEmpty) throw Exception('اكتب بيان المصروف حتى يسهل مراجعته');
+    return (await database).update('expenses', {'amount':amount,'note':note.trim()}, where:'id=?', whereArgs:[id]);
+  }
+  Future<int> deleteExpense(int id) async =>
+      (await database).delete('expenses', where:'id=?', whereArgs:[id]);
   Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note) async {
     if (!grossKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || !netKg.isFinite || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
     return (await database).insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':DateTime.now().toIso8601String(),'note':note.trim()});
@@ -552,6 +568,24 @@ class _ReservationsPageState extends State<ReservationsPage> {
       if (!opened && mounted) showMessage(context, 'تعذر فتح واتساب');
     } catch (_) { if (mounted) showMessage(context, 'تعذر فتح واتساب'); }
   }
+  Future<void> notifyArrivalSms(Map<String,Object?> reservation) async {
+    final rawPhone=(reservation['phone'] as String? ?? '').trim();
+    if(rawPhone.isEmpty){showMessage(context,'لا يوجد رقم هاتف لهذا الحجز');return;}
+    final phone=normalizeYemeniSmsNumber(rawPhone);
+    final customer=reservation['customer_name'] as String? ?? 'عميلنا العزيز';
+    final kg=(reservation['kg'] as num).toStringAsFixed(3);
+    final controller=TextEditingController(text:'السلام عليكم ' + customer + '، نود إشعارك بأن كمية التونة الطازجة التي حجزتها (' + kg + ' كجم) أصبحت متوفرة الآن. يسعدنا خدمتك في تونة بلس، وشكرًا لثقتك بنا.');
+    final edited=await showDialog<String>(context:context,builder:(ctx)=>AlertDialog(
+      title:const Text('رسالة SMS للعميل'),
+      content:TextField(controller:controller,maxLines:5,decoration:const InputDecoration(labelText:'يمكنك تعديل الرسالة قبل فتح تطبيق الرسائل',border:OutlineInputBorder())),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,controller.text.trim()),child:const Text('فتح الرسائل'))]
+    ));
+    controller.dispose();
+    if(edited==null||edited.isEmpty)return;
+    final uri=Uri(scheme:'sms',path:phone,queryParameters:{'body':edited});
+    try{final opened=await launchUrl(uri,mode:LaunchMode.externalApplication);if(!opened&&mounted)showMessage(context,'تعذر فتح تطبيق الرسائل');}
+    catch(_){if(mounted)showMessage(context,'تعذر فتح تطبيق الرسائل');}
+  }
   Future<void> add() async {
     final name=TextEditingController(),phone=TextEditingController(),kg=TextEditingController(),price=TextEditingController(text:'6500'),deposit=TextEditingController(text:'0'),note=TextEditingController();
     await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حجز كمية قادمة'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
@@ -608,6 +642,7 @@ class _ReservationsPageState extends State<ReservationsPage> {
         if((r['note'] as String? ?? '').isNotEmpty)Text('ملاحظات: ${r['note']}'),
         Row(children:[
           Expanded(child:DropdownButton<String>(isExpanded:true,value:r['status'] as String,items:['بانتظار وصول الكمية','مؤكد','تم التسليم','ملغي'].map((v)=>DropdownMenuItem(value:v,child:Text(v,overflow:TextOverflow.ellipsis))).toList(),onChanged:(v)async{if(v!=null){await DB.instance.updateReservationStatus(r['id'] as int,v);reload();}})),
+           IconButton(tooltip:'إشعار وصول عبر SMS',onPressed:()=>notifyArrivalSms(r),icon:const Icon(Icons.sms_outlined,color:Colors.lightBlue)),
           IconButton(tooltip:'إشعار وصول عبر واتساب',onPressed:()=>notifyArrival(r),icon:const Icon(Icons.notifications_active_outlined,color:Colors.green)),
           IconButton(tooltip:'حذف الحجز',onPressed:()async{await DB.instance.deleteReservation(r['id'] as int);reload();},icon:const Icon(Icons.delete_outline,color:Colors.red))
         ])
@@ -1167,6 +1202,36 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظة')),
     ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.updatePrivateBatch(row['id'] as int,double.parse(gross.text),int.parse(price.text),double.parse(net.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ التعديل'))]));
   }
+  Future<void> editExpense(Map<String,Object?> row) async {
+    final amount=TextEditingController(text:(row['amount'] as num).toString());
+    final note=TextEditingController(text:row['note'] as String? ?? '');
+    try{
+      await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
+        title:const Text('تعديل المصروف'),
+        content:Column(mainAxisSize:MainAxisSize.min,children:[
+          TextField(controller:amount,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'مبلغ المصروف (ريال)',prefixIcon:Icon(Icons.payments))),
+          TextField(controller:note,maxLines:3,decoration:const InputDecoration(labelText:'بيان المصروف',prefixIcon:Icon(Icons.notes))),
+        ]),
+        actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton.icon(icon:const Icon(Icons.save),label:const Text('حفظ التعديل'),onPressed:()async{
+          final value=int.tryParse(amount.text.trim());
+          if(value==null||value<=0){showMessage(ctx,'أدخل مبلغًا صحيحًا أكبر من صفر');return;}
+          if(note.text.trim().isEmpty){showMessage(ctx,'اكتب بيان المصروف لتسهيل المراجعة');return;}
+          try{await DB.instance.updateExpense(row['id'] as int,value,note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}
+          catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}
+        })]
+      ));
+    }finally{amount.dispose();note.dispose();}
+  }
+  Future<void> deleteExpense(Map<String,Object?> row) async {
+    final confirmed=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+      title:const Text('حذف المصروف'),
+      content:Text('هل تريد حذف المصروف «' + (row['note'] as String) + '» بقيمة ' + money(row['amount'] as num) + '؟ سيتم تحديث إجمالي المصروفات والربح تلقائيًا.'),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),style:FilledButton.styleFrom(backgroundColor:Colors.red),child:const Text('حذف'))]
+    ));
+    if(confirmed!=true)return;
+    try{await DB.instance.deleteExpense(row['id'] as int);if(mounted)setState(reloadEntries);}
+    catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}
+  }
   Future<void> addExpense() async {
     final amount=TextEditingController(),note=TextEditingController();
     try {
@@ -1257,7 +1322,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
           Card(child:ListTile(title:const Text('إجمالي المصروفات الخاصة'),subtitle:Text(money(expenseTotal),style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))),
           FilledButton.tonalIcon(onPressed:addExpense,icon:const Icon(Icons.add),label:const Text('إضافة مصروف')),
           if(e.data!.isNotEmpty)const Align(alignment:Alignment.centerRight,child:Text('سجل المصروفات',style:TextStyle(fontWeight:FontWeight.bold))),
-          ...e.data!.map((row)=>Card(child:ListTile(title:Text(money(row['amount'] as num)),subtitle:Text('${row['note']}\\n${dateLabel(row['created'] as String)}'),isThreeLine:true,leading:const Icon(Icons.money_off,color:gold))))
+           ...e.data!.map((row)=>Card(child:ListTile(title:Text(money(row['amount'] as num)),subtitle:Text(row['note'].toString()+'\\n'+dateLabel(row['created'] as String)),isThreeLine:true,leading:const Icon(Icons.money_off,color:gold),trailing:PopupMenuButton<String>(onSelected:(action){if(action=='edit'){editExpense(row);}else if(action=='delete'){deleteExpense(row);}},itemBuilder:(_)=>const [PopupMenuItem(value:'edit',child:Text('تعديل المصروف')),PopupMenuItem(value:'delete',child:Text('حذف المصروف'))],child:const Icon(Icons.more_vert))))
         ]);
       }),
       const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
