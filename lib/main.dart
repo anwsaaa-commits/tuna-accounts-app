@@ -190,9 +190,23 @@ class DB {
   Future<int> updateExpense(int id, int amount, String note) async {
     if (amount <= 0) throw Exception('أدخل مبلغ مصروف صحيح');
     if (note.trim().isEmpty) throw Exception('اكتب بيان المصروف حتى يسهل مراجعته');
-    return (await database).update('expenses', {'amount':amount,'note':note.trim()}, where:'id=?', whereArgs:[id]);
+    final db = await database;
+    return db.transaction<int>((txn) async {
+      final rows = await txn.query('expenses', columns:['id'], where:'id=?', whereArgs:[id], limit:1);
+      if (rows.isEmpty) throw Exception('المصروف غير موجود أو سبق حذفه.');
+      // Keep the original batch_id and date: editing the amount changes only
+      // that batch's expense total, never transfers cost to another batch.
+      return txn.update('expenses', {'amount':amount,'note':note.trim()}, where:'id=?', whereArgs:[id]);
+    });
   }
-  Future<int> deleteExpense(int id) async => (await database).delete('expenses', where:'id=?', whereArgs:[id]);
+  Future<int> deleteExpense(int id) async {
+    final db = await database;
+    return db.transaction<int>((txn) async {
+      final rows = await txn.query('expenses', columns:['id'], where:'id=?', whereArgs:[id], limit:1);
+      if (rows.isEmpty) throw Exception('المصروف غير موجود أو سبق حذفه.');
+      return txn.delete('expenses', where:'id=?', whereArgs:[id]);
+    });
+  }
   Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note, {DateTime? purchaseDate}) async {
     if (!grossKg.isFinite || !netKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
     return (await database).insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':(purchaseDate ?? DateTime.now()).toIso8601String(),'note':note.trim()});
