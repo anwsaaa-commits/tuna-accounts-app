@@ -56,10 +56,11 @@ class DB {
   Database? _database;
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await openDatabase(p.join(await getDatabasesPath(), 'tuna_plus.db'), version: 3,
+    _database = await openDatabase(p.join(await getDatabasesPath(), 'tuna_plus.db'), version: 4,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) { await db.execute('CREATE TABLE private_batches(id INTEGER PRIMARY KEY AUTOINCREMENT,gross_kg REAL NOT NULL,purchase_price INTEGER NOT NULL,total_cost INTEGER NOT NULL,net_kg REAL NOT NULL,created TEXT NOT NULL,note TEXT)'); }
-        if (oldVersion < 3) { await db.execute('CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,amount INTEGER NOT NULL,note TEXT NOT NULL,created TEXT NOT NULL)'); }
+        if (oldVersion < 3) { await db.execute('CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,amount INTEGER NOT NULL,note TEXT NOT NULL,created TEXT NOT NULL,batch_id INTEGER)'); }
+        if (oldVersion < 4) { await db.execute('ALTER TABLE expenses ADD COLUMN batch_id INTEGER'); }
       },
       onCreate: (db, version) async {
         await db.execute('CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,phone TEXT,note TEXT)');
@@ -128,10 +129,14 @@ class DB {
   Future<void> setSetting(String key, String value) async => (await database).insert('settings', {'key':key,'value':value}, conflictAlgorithm: ConflictAlgorithm.replace);
   Future<List<Map<String,Object?>>> privateBatches() async => (await database).query('private_batches', orderBy: 'created DESC');
   Future<List<Map<String,Object?>>> expenses() async => (await database).query('expenses', orderBy: 'created DESC');
-  Future<int> addExpense(int amount, String note) async {
+  Future<int> addExpense(int amount, String note, {int? batchId}) async {
     if (amount <= 0) throw Exception('أدخل مبلغ مصروف صحيح');
     if (note.trim().isEmpty) throw Exception('اكتب بيان المصروف حتى يسهل مراجعته');
-    return (await database).insert('expenses', {'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()});
+    return (await database).insert('expenses', {'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String(),'batch_id':batchId});
+  }
+  Future<num> expensesForBatch(int batchId) async {
+    final result = await (await database).rawQuery('SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE batch_id=?',[batchId]);
+    return result.first['total'] as num;
   }
   Future<int> updateExpense(int id, int amount, String note) async {
     if (amount <= 0) throw Exception('أدخل مبلغ مصروف صحيح');
