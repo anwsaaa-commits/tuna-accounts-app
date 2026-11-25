@@ -1,6 +1,9 @@
 name: Build Tuna Plus Signed APK
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - tuna-plus-1.1.10-invoice-whatsapp
 permissions:
   contents: read
 jobs:
