@@ -74,11 +74,12 @@ class DB {
   Database? _database;
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await openDatabase(p.join(await getDatabasesPath(), 'tuna_plus.db'), version: 4,
+    _database = await openDatabase(p.join(await getDatabasesPath(), 'tuna_plus.db'), version: 5,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) { await db.execute('CREATE TABLE private_batches(id INTEGER PRIMARY KEY AUTOINCREMENT,gross_kg REAL NOT NULL,purchase_price INTEGER NOT NULL,total_cost INTEGER NOT NULL,net_kg REAL NOT NULL,created TEXT NOT NULL,note TEXT)'); }
         if (oldVersion < 3) { await db.execute('CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,amount INTEGER NOT NULL,note TEXT NOT NULL,created TEXT NOT NULL,batch_id INTEGER)'); }
         if (oldVersion >= 3 && oldVersion < 4) { await db.execute('ALTER TABLE expenses ADD COLUMN batch_id INTEGER'); }
+        if (oldVersion < 5) { await db.execute('CREATE TABLE sale_batch_allocations(id INTEGER PRIMARY KEY AUTOINCREMENT,sale_id INTEGER NOT NULL,batch_id INTEGER NOT NULL,allocated_kg REAL NOT NULL,FOREIGN KEY(sale_id) REFERENCES sales(id),FOREIGN KEY(batch_id) REFERENCES private_batches(id))'); }
       },
       onCreate: (db, version) async {
         await db.execute('CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,phone TEXT,note TEXT)');
@@ -87,6 +88,7 @@ class DB {
         await db.execute('CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT)');
         await db.execute('CREATE TABLE private_batches(id INTEGER PRIMARY KEY AUTOINCREMENT,gross_kg REAL NOT NULL,purchase_price INTEGER NOT NULL,total_cost INTEGER NOT NULL,net_kg REAL NOT NULL,created TEXT NOT NULL,note TEXT)');
         await db.execute('CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,amount INTEGER NOT NULL,note TEXT NOT NULL,created TEXT NOT NULL,batch_id INTEGER)');
+        await db.execute('CREATE TABLE sale_batch_allocations(id INTEGER PRIMARY KEY AUTOINCREMENT,sale_id INTEGER NOT NULL,batch_id INTEGER NOT NULL,allocated_kg REAL NOT NULL,FOREIGN KEY(sale_id) REFERENCES sales(id),FOREIGN KEY(batch_id) REFERENCES private_batches(id))');
         await db.insert('settings', {'key':'shop','value':'تونة بلس'});
         await db.insert('settings', {'key':'price','value':'6500'});
         await db.insert('settings', {'key':'bank','value':'254127488'});
@@ -109,10 +111,25 @@ class DB {
     if (total <= 0) throw Exception('قيمة الفاتورة غير صحيحة');
     if (paid > total) throw Exception('المدفوع لا يتجاوز الإجمالي');
     if (type == 'نقدي' && paid != total) throw Exception('البيع النقدي يجب أن يكون مدفوعاً بالكامل');
-    return (await database).insert('sales', {
-      'invoice':'TP-${DateTime.now().microsecondsSinceEpoch}','customer_id':customerId,
-      'kg':kg,'price':price,'total':total,'paid':paid,'kind':type,'note':note.trim(),
-      'created':DateTime.now().toIso8601String()
+    final db = await database;
+    return db.transaction<int>((txn) async {
+      final saleId = await txn.insert('sales', {
+        'invoice':'TP-${DateTime.now().microsecondsSinceEpoch}','customer_id':customerId,
+        'kg':kg,'price':price,'total':total,'paid':paid,'kind':type,'note':note.trim(),
+        'created':DateTime.now().toIso8601String()
+      });
+      // FIFO allocations: historical sales and old untracked stock are never guessed.
+      final batches = await txn.rawQuery('SELECT b.id,b.net_kg,COALESCE(SUM(a.allocated_kg),0) allocated FROM private_batches b LEFT JOIN sale_batch_allocations a ON a.batch_id=b.id GROUP BY b.id ORDER BY b.created ASC,b.id ASC');
+      var toAllocate = kg;
+      for (final batch in batches) {
+        if (toAllocate <= 0.000001) break;
+        final available = ((batch['net_kg'] as num) - (batch['allocated'] as num)).toDouble();
+        if (available <= 0.000001) continue;
+        final allocation = available < toAllocate ? available : toAllocate;
+        await txn.insert('sale_batch_allocations', {'sale_id':saleId,'batch_id':batch['id'],'allocated_kg':allocation});
+        toAllocate -= allocation;
+      }
+      return saleId;
     });
   }
   Future<int> collect(int customerId, int amount, String note) async {
@@ -168,12 +185,42 @@ class DB {
   }
   Future<int> updatePrivateBatch(int id, double grossKg, int purchasePrice, double netKg, String note) async {
     if (!grossKg.isFinite || !netKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
-    return (await database).update('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'note':note.trim()}, where:'id=?', whereArgs:[id]);
+    final db = await database;
+    final allocated = (await db.rawQuery('SELECT COALESCE(SUM(allocated_kg),0) AS kg FROM sale_batch_allocations WHERE batch_id=?',[id])).first['kg'] as num;
+    if (allocated > netKg + 0.000001) throw Exception('لا يمكن تقليل الوزن الصافي إلى أقل من الكمية المباعة المرتبطة بهذه الدفعة.');
+    return db.update('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'note':note.trim()}, where:'id=?', whereArgs:[id]);
   }
+  Future<Map<String,num>> batchSalesSummary(int id) async {
+    final db = await database;
+    final r = (await db.rawQuery('SELECT COALESCE(SUM(a.allocated_kg),0) kg,COALESCE(SUM(a.allocated_kg*s.price),0) revenue FROM sale_batch_allocations a JOIN sales s ON s.id=a.sale_id WHERE a.batch_id=?',[id])).first;
+    final batch = (await db.query('private_batches',where:'id=?',whereArgs:[id],limit:1)).first;
+    final expenses = await expensesForBatch(id);
+    final net = batch['net_kg'] as num;
+    final sold = r['kg'] as num;
+    final cost = batch['total_cost'] as num;
+    final complete = sold >= net - 0.000001;
+    return {'soldKg':sold,'remainingKg': (net-sold).clamp(0,net),'revenue':r['revenue'] as num,'expenses':expenses,'cost':cost,'complete':complete?1:0,'profit':complete?(r['revenue'] as num)-cost-expenses:0};
+  }
+  Future<List<Map<String,Object?>>> batchSalesRows(int id) async => (await (await database).rawQuery('SELECT s.invoice,s.created,s.price,a.allocated_kg FROM sale_batch_allocations a JOIN sales s ON s.id=a.sale_id WHERE a.batch_id=? ORDER BY s.created DESC',[id]));
+  Future<Map<String,num>> batchSalesSummary(int id) async {
+    final db = await database;
+    final r = (await db.rawQuery('SELECT COALESCE(SUM(a.allocated_kg),0) kg,COALESCE(SUM(a.allocated_kg*s.price),0) revenue FROM sale_batch_allocations a JOIN sales s ON s.id=a.sale_id WHERE a.batch_id=?',[id])).first;
+    final batch = (await db.query('private_batches',where:'id=?',whereArgs:[id],limit:1)).first;
+    final expenses = await expensesForBatch(id);
+    final net = batch['net_kg'] as num;
+    final sold = r['kg'] as num;
+    final cost = batch['total_cost'] as num;
+    final complete = sold >= net - 0.000001;
+    return {'soldKg':sold,'remainingKg': (net-sold).clamp(0,net),'revenue':r['revenue'] as num,'expenses':expenses,'cost':cost,'complete':complete?1:0,'profit':complete?(r['revenue'] as num)-cost-expenses:0};
+  }
+  Future<List<Map<String,Object?>>> batchSalesRows(int id) async => (await (await database).rawQuery('SELECT s.invoice,s.created,s.price,a.allocated_kg FROM sale_batch_allocations a JOIN sales s ON s.id=a.sale_id WHERE a.batch_id=? ORDER BY s.created DESC',[id]));
   Future<int> deletePrivateBatch(int id) async {
-    final linked = await expensesForBatch(id);
-    if (linked > 0) throw Exception('لا يمكن حذف عملية الشراء لوجود مصروفات مرتبطة بها. احذف أو أعد ربط المصروفات أولاً.');
-    return (await database).delete('private_batches', where:'id=?', whereArgs:[id]);
+    final db = await database;
+    final linkedExpenses = (await db.rawQuery('SELECT COUNT(*) AS n FROM expenses WHERE batch_id=?',[id])).first['n'] as int;
+    final linkedSales = (await db.rawQuery('SELECT COUNT(*) AS n FROM sale_batch_allocations WHERE batch_id=?',[id])).first['n'] as int;
+    if (linkedExpenses > 0) throw Exception('لا يمكن حذف عملية الشراء لوجود مصروفات مرتبطة بها. احذف أو أعد ربط المصروفات أولاً.');
+    if (linkedSales > 0) throw Exception('لا يمكن حذف عملية الشراء لأنها مرتبطة بمبيعات. حفاظًا على دقة المخزون، لا يمكن حذفها.');
+    return db.delete('private_batches', where:'id=?', whereArgs:[id]);
   }
   Future<void> deleteSale(int id) async {
     final db = await database;
@@ -185,7 +232,7 @@ class DB {
       final saleOutstanding = (sale['total'] as num) - (sale['paid'] as num);
       if (collected > remaining - saleOutstanding) throw Exception('لا يمكن حذف الفاتورة؛ توجد تحصيلات لا يمكن ربطها بعد الحذف.');
     }
-    await db.delete('sales',where:'id=?',whereArgs:[id]);
+    await db.transaction((txn) async { await txn.delete('sale_batch_allocations',where:'sale_id=?',whereArgs:[id]); await txn.delete('sales',where:'id=?',whereArgs:[id]); });
   }
 }
 void showMessage(BuildContext context, String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(text)));
@@ -554,6 +601,37 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       const SizedBox(height:8),const Text('هذه البيانات خاصة ولا تظهر في فواتير العملاء أو كشوفهم.')
     ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addPrivateBatch(double.parse(gross.text),int.parse(price.text),double.parse(net.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ'))]));
   }
+  Future<void> showBatchStatement(Map<String,Object?> row) async {
+    final id = row['id'] as int;
+    final summaryFuture = DB.instance.batchSalesSummary(id);
+    final salesFuture = DB.instance.batchSalesRows(id);
+    if (!mounted) return;
+    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
+      title:const Text('كشف دفعة الشراء'),
+      content:SizedBox(width:420,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+        Text('تاريخ الشراء: ${dateLabel(row['created'] as String)}'),
+        Text('الوزن الصافي: ${(row['net_kg'] as num).toStringAsFixed(2)} كجم'),
+        Text('تكلفة الشراء: ${money(row['total_cost'] as num)}'),
+        FutureBuilder<Map<String,num>>(future:summaryFuture,builder:(context,s){
+          if(!s.hasData)return const Padding(padding:EdgeInsets.all(12),child:LinearProgressIndicator());
+          final v=s.data!,complete=v['complete']==1;
+          return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+            const Divider(),Text('المباع: ${v['soldKg']!.toStringAsFixed(3)} كجم'),
+            Text('المتبقي: ${v['remainingKg']!.toStringAsFixed(3)} كجم'),
+            Text('إيراد المبيعات المرتبطة: ${money(v['revenue']!)}'),
+            Text('المصروفات المرتبطة: ${money(v['expenses']!)}'),
+            Text(complete?'الربح المحقق للدفعة: ${money(v['profit']!)}':'الربح النهائي: لم يُعتمد بعد — يجب تصريف كامل الدفعة',style:TextStyle(color:complete?Colors.green:gold,fontWeight:FontWeight.bold)),
+          ]);
+        }),
+        const Divider(),const Text('تفاصيل المبيعات المخصصة لهذه الدفعة',style:TextStyle(fontWeight:FontWeight.bold)),
+        FutureBuilder<List<Map<String,Object?>>>(future:salesFuture,builder:(context,s){
+          if(!s.hasData)return const SizedBox.shrink();
+          if(s.data!.isEmpty)return const Text('لا توجد مبيعات مرتبطة بهذه الدفعة حتى الآن.');
+          return Column(children:s.data!.map((sale)=>ListTile(dense:true,title:Text('${sale['invoice']} • ${(sale['allocated_kg'] as num).toStringAsFixed(3)} كجم'),subtitle:Text('${dateLabel(sale['created'] as String)} • ${money(sale['price'] as num)}/كجم'))).toList());
+        })
+      ]))),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إغلاق'))]));
+  }
   Future<void> editBatch(Map<String,Object?> row) async {
     final gross=TextEditingController(text:(row['gross_kg'] as num).toString());
     final price=TextEditingController(text:(row['purchase_price'] as num).toString());
@@ -630,7 +708,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       }),
       const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
       if(rows.isEmpty)const Padding(padding:EdgeInsets.all(18),child:Text('لم تسجل مشتريات بعد',textAlign:TextAlign.center)),
-      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;final batchId=r['id'] as int;return FutureBuilder<num>(future:DB.instance.expensesForBatch(batchId),builder:(context,ex){final batchExpenses=ex.data??0;final adjustedTotal=tc+batchExpenses;final adjustedPerKg=n==0?0:adjustedTotal/n;return Card(child:ListTile(title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • تكلفة الشراء: ${money(tc)}\nمصروفات مرتبطة: ${money(batchExpenses)} • الإجمالي الحقيقي: ${money(adjustedTotal)}'),isThreeLine:true,trailing:PopupMenuButton<String>(tooltip:'خيارات عملية الشراء',onSelected:(v){if(v=='edit')editBatch(r);if(v=='delete')removeBatch(batchId);},itemBuilder:(ctx)=>const [PopupMenuItem(value:'edit',child:Text('تعديل')),PopupMenuItem(value:'delete',child:Text('حذف'))])));}})
+      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;final batchId=r['id'] as int;return FutureBuilder<num>(future:DB.instance.expensesForBatch(batchId),builder:(context,ex){final batchExpenses=ex.data??0;final adjustedTotal=tc+batchExpenses;final adjustedPerKg=n==0?0:adjustedTotal/n;return Card(child:ListTile(onTap:()=>showBatchStatement(r),title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • تكلفة الشراء: ${money(tc)}\nمصروفات مرتبطة: ${money(batchExpenses)} • الإجمالي الحقيقي: ${money(adjustedTotal)}'),isThreeLine:true,trailing:PopupMenuButton<String>(tooltip:'خيارات عملية الشراء',onSelected:(v){if(v=='edit')editBatch(r);if(v=='delete')removeBatch(batchId);},itemBuilder:(ctx)=>const [PopupMenuItem(value:'edit',child:Text('تعديل')),PopupMenuItem(value:'delete',child:Text('حذف'))])));}})
     ]);
   }));
 }
