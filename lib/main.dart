@@ -168,7 +168,20 @@ class DB {
   Future<int> addExpense(int amount, String note, {int? batchId}) async {
     if (amount <= 0) throw Exception('أدخل مبلغ مصروف صحيح');
     if (note.trim().isEmpty) throw Exception('اكتب بيان المصروف حتى يسهل مراجعته');
-    return (await database).insert('expenses', {'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String(),'batch_id':batchId});
+    final db = await database;
+    return db.transaction<int>((txn) async {
+      // Validate the selected purchase before attaching a private expense to it.
+      if (batchId != null) {
+        final batch = await txn.query('private_batches', columns:['id'], where:'id=?', whereArgs:[batchId], limit:1);
+        if (batch.isEmpty) throw Exception('عملية الشراء المرتبطة بالمصروف غير موجودة');
+      }
+      return txn.insert('expenses', {
+        'amount':amount,
+        'note':note.trim(),
+        'created':DateTime.now().toIso8601String(),
+        'batch_id':batchId
+      });
+    });
   }
   Future<num> expensesForBatch(int batchId) async {
     final result = await (await database).rawQuery('SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE batch_id=?',[batchId]);
