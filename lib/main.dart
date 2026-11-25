@@ -1303,7 +1303,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
     final net=rows.fold<num>(0,(a,r)=>a+(r['net_kg'] as num));
     final costs=rows.fold<num>(0,(a,r)=>a+(r['total_cost'] as num));
     final loss=gross-net;final eff=net==0?0:costs/net;
-    return ListView(padding:const EdgeInsets.all(12),children:[
+    return ListView(padding:const EdgeInsets.fromLTRB(12,12,12,128),children:[
       const Text('بيانات سرية لصاحب المتجر فقط',textAlign:TextAlign.center,style:TextStyle(color:gold,fontWeight:FontWeight.bold)),
       GridView.count(shrinkWrap:true,physics:const NeverScrollableScrollPhysics(),crossAxisCount:2,childAspectRatio:1.5,children:[
         Card(child:ListTile(title:const Text('إجمالي الشراء'),subtitle:Text('${gross.toStringAsFixed(2)} كجم'))),
