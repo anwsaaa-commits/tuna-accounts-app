@@ -567,7 +567,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
         Card(child:ListTile(title:const Text('إجمالي رأس المال'),subtitle:Text(money(costs)))),
         Card(child:ListTile(title:const Text('الفاقد'),subtitle:Text('${loss.toStringAsFixed(2)} كجم'))),
       ]),
-      Card(child:ListTile(title:const Text('التكلفة الحقيقية للكيلو الصافي'),subtitle:Text(money(eff),style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))),
+      FutureBuilder<List<Map<String,Object?>>>(future:expenseEntries,builder:(context,expenseSnapshot){final linkedExpenses=(expenseSnapshot.data??[]).where((x)=>x['batch_id']!=null).fold<num>(0,(sum,x)=>sum+(x['amount'] as num));final adjustedEff=net==0?0:(costs+linkedExpenses)/net;return Card(child:ListTile(title:const Text('التكلفة الحقيقية للكيلو الصافي (شاملة المصروفات المرتبطة)'),subtitle:Text(money(adjustedEff),style:const TextStyle(color:gold,fontWeight:FontWeight.bold))));}),
       Card(child:ListTile(title:const Text('فرق المبيعات المسجلة والمشتريات المسجلة (تقريبي)'),subtitle:FutureBuilder<Map<String,num>>(future:DB.instance.totals(),builder:(context,t)=>FutureBuilder<List<Map<String,Object?>>>(future:expenseEntries,builder:(context,e){if(!t.hasData||!e.hasData)return const Text('...');final expenseTotal=e.data!.fold<num>(0,(sum,row)=>sum+(row['amount'] as num));return Text(money(t.data!['sales']!-costs-expenseTotal));})))),
       FilledButton.icon(onPressed:addEntry,icon:const Icon(Icons.add),label:const Text('إضافة عملية شراء')),
       const SizedBox(height:8),
