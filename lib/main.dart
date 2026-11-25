@@ -331,11 +331,18 @@ class _InvoicePreviewState extends State<InvoicePreview>{
 }
 Widget _invoiceRow(String label,String value,{bool strong=false})=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[Text(label,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null),Flexible(child:Text(value,textAlign:TextAlign.end,style:strong?const TextStyle(fontWeight:FontWeight.bold,color:gold):null))]));
 Future<void> sendCustomerSms(BuildContext context, Map<String,Object?> client) async {
-  final phone=(client['phone'] as String? ?? '').replaceAll(RegExp(r'[^0-9+]'), '').trim();
+  final rawPhone=(client['phone'] as String? ?? '').trim();
+  var phone=rawPhone.replaceAll(RegExp(r'[^0-9+]'), '');
   if(phone.isEmpty){showMessage(context,'لا يوجد رقم هاتف مسجل لهذا العميل');return;}
+  if(phone.startsWith('00967')) phone='+${phone.substring(2)}';
+  else if(phone.startsWith('967')) phone='+$phone';
+  else if(phone.startsWith('0')) phone='+967${phone.substring(1)}';
+  else if(!phone.startsWith('+') && phone.length==9) phone='+967$phone';
   final name=(client['name'] as String? ?? 'عميلنا').trim();
-  final body='السلام عليكم $name، نود إشعارك بأن كمية التونة الطازجة أصبحت متوفرة الآن. يسعدنا خدمتك في تونة بلس، وشكرًا لثقتك بنا.';
-  final uri=Uri(scheme:'sms',path:phone,queryParameters:{'body':body});
+  final bodyController=TextEditingController(text:'السلام عليكم $name، نود إشعارك بأن كمية التونة الطازجة أصبحت متوفرة الآن. يسعدنا خدمتك في تونة بلس، وشكرًا لثقتك بنا.');
+  final edited=await showDialog<String>(context:context,builder:(ctx)=>AlertDialog(title:const Text('رسالة نصية للعميل'),content:TextField(controller:bodyController,maxLines:5,decoration:const InputDecoration(labelText:'نص الرسالة',border:OutlineInputBorder())),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,bodyController.text.trim()),child:const Text('فتح الرسائل'))]));
+  if(edited==null || edited.isEmpty) return;
+  final uri=Uri(scheme:'sms',path:phone,queryParameters:{'body':edited});
   if(!await launchUrl(uri)){showMessage(context,'تعذر فتح تطبيق الرسائل');}
 }
 
@@ -506,7 +513,6 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
   Future<void> removeExpense(int id) async {
     final confirm=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حذف المصروف'),content:const Text('هل تريد حذف هذا المصروف نهائيًا؟'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حذف'))]));
     if(confirm==true){await DB.instance.deleteExpense(id);if(mounted)setState(reloadEntries);}
-  }
   }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('حسابات الشراء والمصروفات الخاصة')),body:FutureBuilder<List<Map<String,Object?>>>(future:entries,builder:(context,s){
     if(s.hasError)return Center(child:Text('خطأ: ${s.error}'));
