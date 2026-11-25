@@ -254,7 +254,12 @@ class DB {
   }
   Future<Map<String,num>> batchSalesSummary(int id) async {
     final db = await database;
-    final r = (await db.rawQuery('SELECT COALESCE(SUM(a.allocated_kg),0) kg,COALESCE(SUM(a.allocated_kg*s.price),0) revenue FROM sale_batch_allocations a JOIN sales s ON s.id=a.sale_id WHERE a.batch_id=?',[id])).first;
+    final r = (await db.rawQuery(
+      "SELECT COALESCE(SUM(a.allocated_kg),0) kg,"
+      "COALESCE(SUM(CASE WHEN a.allocated_kg >= s.kg - 0.000001 THEN s.total "
+      "ELSE ROUND(s.total * a.allocated_kg / s.kg) END),0) revenue "
+      "FROM sale_batch_allocations a JOIN sales s ON s.id=a.sale_id WHERE a.batch_id=?",
+      [id])).first;
     final batch = (await db.query('private_batches',where:'id=?',whereArgs:[id],limit:1)).first;
     final expenses = await expensesForBatch(id);
     final net = batch['net_kg'] as num;
