@@ -567,7 +567,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       }),
       const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
       if(rows.isEmpty)const Padding(padding:EdgeInsets.all(18),child:Text('لم تسجل مشتريات بعد',textAlign:TextAlign.center)),
-      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;return Card(child:ListTile(title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • الإجمالي: ${money(tc)}'),isThreeLine:true,trailing:Text(money(n==0?0:tc/n))));})
+      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;final batchId=r['id'] as int;return FutureBuilder<num>(future:DB.instance.expensesForBatch(batchId),builder:(context,ex){final batchExpenses=ex.data??0;final adjustedTotal=tc+batchExpenses;final adjustedPerKg=n==0?0:adjustedTotal/n;return Card(child:ListTile(title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • تكلفة الشراء: ${money(tc)}\nمصروفات مرتبطة: ${money(batchExpenses)} • الإجمالي الحقيقي: ${money(adjustedTotal)}'),isThreeLine:true,trailing:Text(money(adjustedPerKg),style:const TextStyle(color:gold,fontWeight:FontWeight.bold))));}})
     ]);
   }));
 }
