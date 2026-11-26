@@ -276,7 +276,12 @@ class DB {
     final purchaseCost=batches.fold<num>(0,(sum,b)=>sum+(b['total_cost'] as num));
     final soldKg=salesTotals['weight'] as num;
     var costSold=0.0,stockCost=0.0,remainingKg=0.0,expenseTotal=legacyExpenses;
-    var unallocatedKg=double.tryParse(await setting('legacy_unallocated_sales_kg','0'))??0.0;
+    // Reconcile the persisted migration warning against current sales and allocations.
+    // Use the larger value to avoid double-counting historical migration gaps.
+    final migratedGap=double.tryParse(await setting('legacy_unallocated_sales_kg','0'))??0.0;
+    final allocatedSalesKg=saleAllocations.fold<num>(0,(sum,a)=>sum+(a['kg'] as num));
+    final missingAllocationKg=((soldKg-allocatedSalesKg).toDouble()).clamp(0.0,double.infinity);
+    var unallocatedKg=migratedGap>missingAllocationKg?migratedGap:missingAllocationKg;
     for(final batch in batches){
       final id=batch['id'] as int, net=(batch['net_kg'] as num).toDouble(),baseCost=(batch['total_cost'] as num).toDouble();
       final exp=batchExpenses.where((e)=>e['batch_id']==id).fold<num>(0,(sum,e)=>sum+(e['amount'] as num)).toDouble();
@@ -385,8 +390,12 @@ class DB {
     final remainingKg=(netKg-soldKg).clamp(0.0,netKg);
     final costOfSold=soldKg*unitCost;
     final migrationUnallocated=double.tryParse(await setting('legacy_unallocated_sales_kg','0'))??0.0;
+    final allSalesKg=(await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
+    final allAllocatedKg=(await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations')).first['kg'] as num;
+    final allocationGap=((allSalesKg-allAllocatedKg).toDouble()).clamp(0.0,double.infinity);
+    final unallocatedSalesKg=migrationUnallocated>allocationGap?migrationUnallocated:allocationGap;
     final profit=batchNetProfit(revenue,soldKg,unitCost);
-    return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':soldKg<=netKg+0.0001&&migrationUnallocated<=0.0001,'profitFinal':remainingKg<=0.0001&&migrationUnallocated<=0.0001,'expenseTotal':expenseTotal,'unallocatedSoldKg':migrationUnallocated,'allocations':allocatedSales,'expenseRows':expenseRows};
+    return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':soldKg<=netKg+0.0001&&unallocatedSalesKg<=0.0001,'profitFinal':remainingKg<=0.0001&&unallocatedSalesKg<=0.0001,'expenseTotal':expenseTotal,'unallocatedSoldKg':unallocatedSalesKg,'allocations':allocatedSales,'expenseRows':expenseRows};
   }
   Future<void> updatePrivateBatch(int id,double grossKg,int purchasePrice,double netKg,String note) async {
     if(!grossKg.isFinite || grossKg<=0 || purchasePrice<=0 || !netKg.isFinite || netKg<=0 || netKg>grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
