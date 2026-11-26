@@ -1630,7 +1630,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
         Card(child:ListTile(title:const Text('الفاقد'),subtitle:Text('${loss.toStringAsFixed(2)} كجم'))),
       ]),
       Card(child:ListTile(title:const Text('التكلفة الحقيقية للكيلو الصافي'),subtitle:Text(money(eff),style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))),
-      Card(child:ListTile(title:const Text('فرق المبيعات المسجلة والمشتريات المسجلة (تقريبي)'),subtitle:FutureBuilder<Map<String,num>>(future:DB.instance.totals(),builder:(context,t)=>FutureBuilder<List<Map<String,Object?>>>(future:expenseEntries,builder:(context,e){if(!t.hasData||!e.hasData)return const Text('...');final expenseTotal=e.data!.fold<num>(0,(sum,row)=>sum+(row['amount'] as num));return Text(money(t.data!['sales']!-costs-expenseTotal));})))),
+      Card(child:ListTile(title:const Text('فرق المبيعات المسجلة والمشتريات المسجلة (تقريبي)'),subtitle:FutureBuilder<Map<String,num>>(future:DB.instance.totals(),builder:(context,t){if(!t.hasData)return const Text('...');return Text(money(t.data!['sales']!-costs-(t.data!['expenses']??0)));}))),
       FilledButton.icon(onPressed:addEntry,icon:const Icon(Icons.add),label:const Text('إضافة عملية شراء')),
       const SizedBox(height:8),      OutlinedButton.icon(onPressed:showGlobalInventory,icon:const Icon(Icons.inventory),label:const Text('الجرد الشامل ومقارنة الوزن الفعلي')),
       const SizedBox(height:8),
