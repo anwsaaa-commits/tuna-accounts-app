@@ -1438,6 +1438,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       final report=await DB.instance.privateBatchStatement(purchase['id'] as int);
       final batch=report['batch'] as Map<String,Object?>;
       final allocations=report['allocations'] as List<Map<String,Object?>>;
+      final expenseRows=report['expenseRows'] as List<Map<String,Object?>>;
       final font=await loadArabicPdfFont();
       try{
         final number=(Object? value)=>NumberFormat('#,##0.##','en').format(value is num?value:0);
@@ -1460,6 +1461,17 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
               pdfText('الإيراد: ${number(report['revenue'])} ر.ي • تكلفة المباع: ${number(report['costOfSold'])} ر.ي',font),
               pdfText('الربح ${(report['profitFinal'] as bool)?'النهائي':'المؤقت'}: ${number(report['profit'])} ر.ي',font,fontSize:12),
               pw.SizedBox(height:12),
+              pdfText('تفاصيل المصروفات',font,fontSize:14),
+              if(expenseRows.isEmpty)pdfText('لا توجد مصروفات للدفعة.',font),
+              if(expenseRows.isNotEmpty)pw.Table(border:pw.TableBorder.all(color:pdf.PdfColor.fromHex('#D6C6A5'),width:0.4),children:[
+                pw.TableRow(decoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#2C2924')),children:[pdfCell('التاريخ',font,header:true),pdfCell('البيان',font,header:true),pdfCell('المبلغ',font,header:true)]),
+                ...expenseRows.map((expense)=>pw.TableRow(children:[
+                  pdfCell((expense['created'] as String).substring(0,10),font),
+                  pdfCell(expense['note']?.toString()??'—',font),
+                  pdfCell(number(expense['amount'])+' ر.ي',font),
+                ]))
+              ]),
+              pw.SizedBox(height:8),
               pdfText('تفاصيل المبيعات',font,fontSize:14),
               pw.Table(border:pw.TableBorder.all(color:pdf.PdfColor.fromHex('#D6C6A5'),width:0.4),children:[
                 pw.TableRow(decoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#2C2924')),children:[pdfCell('الفاتورة',font,header:true),pdfCell('التاريخ',font,header:true),pdfCell('الوزن',font,header:true),pdfCell('الإيراد',font,header:true)]),
