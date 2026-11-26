@@ -46,6 +46,16 @@ double unallocatedSaleKg(num totalSold,num allocated,num migrationWarning) {
   return migrationWarning>discrepancy?migrationWarning.toDouble():discrepancy.toDouble();
 }
 
+
+bool saleAllocationMismatch(num saleKg,num allocatedKg,{double tolerance=0.0001}) {
+  if (!saleKg.isFinite || !allocatedKg.isFinite || saleKg < 0 || allocatedKg < 0) return true;
+  return (saleKg-allocatedKg).abs()>tolerance;
+}
+bool batchAllocationOverage(num allocatedKg,num netKg,{double tolerance=0.0001}) {
+  if (!allocatedKg.isFinite || !netKg.isFinite || allocatedKg < 0 || netKg < 0) return true;
+  return allocatedKg>netKg+tolerance;
+}
+
 String money(num value) => '${NumberFormat('#,##0', 'en').format(value)} ر.ي';
 String dateLabel(String value) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime.parse(value));
 
