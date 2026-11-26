@@ -22,7 +22,8 @@ void main() {
     });
 
     test('allocation discrepancies in either direction are detected without migration warning', () {
-      expect(unallocatedSaleKg(10, 8, 0), closeTo(2, 0.00001));\n      expect(unallocatedSaleKg(10, 12, 0), closeTo(2, 0.00001));
+      expect(unallocatedSaleKg(10, 8, 0), closeTo(2, 0.00001));
+      expect(unallocatedSaleKg(10, 12, 0), closeTo(2, 0.00001));
     });
 
     test('migration warning is not double counted against calculated gap', () {
