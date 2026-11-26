@@ -37,6 +37,30 @@ void main() {
       expect(unallocatedSaleKg(5, 6, 0), 1);
     });
 
+    test('invoice allocation mismatch in either direction is flagged', () {
+      expect(saleAllocationMismatch(4, 3.5), isTrue);
+      expect(saleAllocationMismatch(4, 4), isFalse);
+      expect(saleAllocationMismatch(4, 4.00001), isFalse);
+    });
+
+    test('batch stock allocation overage is flagged while valid allocation passes', () {
+      expect(batchAllocationOverage(12, 10), isTrue);
+      expect(batchAllocationOverage(10, 10), isFalse);
+      expect(batchAllocationOverage(8, 10), isFalse);
+    });
+
+    test('offsetting batch over-allocation cannot be hidden by equal global totals', () {
+      // Batch A: 10 kg stock, 12 kg allocated. Batch B: 10 kg stock, 8 kg allocated.
+      expect((12 + 8) == (10 + 10), isTrue);
+      expect(batchAllocationOverage(12, 10), isTrue);
+      expect(batchAllocationOverage(8, 10), isFalse);
+    });
+
+    test('invalid integrity helper inputs are treated as unreliable', () {
+      expect(saleAllocationMismatch(double.nan, 0), isTrue);
+      expect(batchAllocationOverage(5, double.infinity), isTrue);
+    });
+
     test('zero net weight never divides by zero', () {
       expect(batchUnitCost(150000, 27000, 0), 0);
     });
