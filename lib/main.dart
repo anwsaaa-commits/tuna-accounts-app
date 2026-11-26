@@ -1115,6 +1115,41 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
   late Future<List<Map<String,Object?>>> expenseEntries;
   @override void initState(){super.initState();entries=DB.instance.privateBatches();expenseEntries=DB.instance.expenses();}
   void reloadEntries(){entries=DB.instance.privateBatches();expenseEntries=DB.instance.expenses();}
+  Future<void> showGlobalInventory() async {
+    final batches=await DB.instance.batchStocks();
+    final totals=await DB.instance.totals();
+    if(!mounted)return;
+    final actualController=TextEditingController();
+    double gross=0,net=0,sold=0,remaining=0,cost=0;
+    for(final b in batches){
+      gross+=(b['gross_kg'] as num).toDouble();
+      net+=(b['net_kg'] as num).toDouble();
+      sold+=(b['sold_kg'] as num).toDouble();
+      remaining+=(b['remaining_kg'] as num).toDouble();
+      cost+=(b['total_cost'] as num).toDouble();
+    }
+    await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(
+      title:const Text('الجرد الشامل — عرض فقط'),
+      content:SizedBox(width:double.maxFinite,height:MediaQuery.of(ctx).size.height*0.65,child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+        const Text('تجميع لكل دفعات الشراء دون تغيير أرصدتها.',style:TextStyle(color:Colors.orange,fontSize:12)),
+        const Divider(),
+        Text('الوزن الإجمالي المشترى: ${gross.toStringAsFixed(3)} كجم'),
+        Text('الوزن الصافي بعد التقطيع: ${net.toStringAsFixed(3)} كجم'),
+        Text('الوزن المباع (حسب تخصيص الدفعات): ${sold.toStringAsFixed(3)} كجم'),
+        Text('المخزون النظري المتبقي: ${remaining.toStringAsFixed(3)} كجم',style:const TextStyle(fontWeight:FontWeight.bold,color:gold)),
+        Text('تكلفة الشراء الأساسية: ${money(cost)}'),
+        Text('إجمالي إيرادات المبيعات: ${money(totals['sales']??0)}'),
+        Text('تكلفة البضاعة المباعة (شاملة مصروف الدفعات): ${money(totals['costOfSold']??0)}'),
+        Text('الربح المؤقت: ${money(totals['netProfit']??0)}'),
+        const Divider(),
+        TextField(controller:actualController,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الفعلي الذي قمت بوزنه (كجم)',border:OutlineInputBorder()),onChanged:(_)=>setDialog((){})),
+        if(actualController.text.trim().isNotEmpty&&double.tryParse(actualController.text.trim())!=null)
+          Text('فرق الجرد: ${(double.parse(actualController.text.trim())-remaining).toStringAsFixed(3)} كجم • ${double.parse(actualController.text.trim())>=remaining?'زيادة':'عجز'}',style:const TextStyle(fontWeight:FontWeight.bold)),
+      ]))),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إغلاق'))],
+    )));
+    actualController.dispose();
+  }
   Future<void> addEntry() async {
     final gross = TextEditingController();
     final price = TextEditingController();
@@ -1417,6 +1452,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       Card(child:ListTile(title:const Text('التكلفة الحقيقية للكيلو الصافي'),subtitle:Text(money(eff),style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))),
       Card(child:ListTile(title:const Text('فرق المبيعات المسجلة والمشتريات المسجلة (تقريبي)'),subtitle:FutureBuilder<Map<String,num>>(future:DB.instance.totals(),builder:(context,t)=>FutureBuilder<List<Map<String,Object?>>>(future:expenseEntries,builder:(context,e){if(!t.hasData||!e.hasData)return const Text('...');final expenseTotal=e.data!.fold<num>(0,(sum,row)=>sum+(row['amount'] as num));return Text(money(t.data!['sales']!-costs-expenseTotal));})))),
       FilledButton.icon(onPressed:addEntry,icon:const Icon(Icons.add),label:const Text('إضافة عملية شراء')),
+      const SizedBox(height:8),      OutlinedButton.icon(onPressed:showGlobalInventory,icon:const Icon(Icons.inventory),label:const Text('الجرد الشامل ومقارنة الوزن الفعلي')),
       const SizedBox(height:8),
       FutureBuilder<List<Map<String,Object?>>>(future:expenseEntries,builder:(context,e){
         if(!e.hasData)return const Card(child:ListTile(title:Text('إجمالي المصروفات'),subtitle:Text('جارٍ التحميل...')));
