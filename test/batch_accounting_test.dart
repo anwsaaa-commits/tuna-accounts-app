@@ -13,6 +13,14 @@ void main() {
       expect(batchNetProfit(13000, 2, unitCost), closeTo(3923.076923, 0.001));
     });
 
+    test('invalid negative or non-finite inputs are safely rejected', () {
+      expect(batchUnitCost(-150000, 0, 39), 0);
+      expect(batchUnitCost(150000, -27000, 39), 0);
+      expect(batchUnitCost(150000, 27000, double.nan), 0);
+      expect(batchNetProfit(13000, -2, 4500), 0);
+      expect(batchNetProfit(double.infinity, 2, 4500), 0);
+    });
+
     test('zero net weight never divides by zero', () {
       expect(batchUnitCost(150000, 27000, 0), 0);
     });
