@@ -286,6 +286,7 @@ class DB {
     final collections=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) total FROM collections')).first['total'] as num;
     final due=(await db.rawQuery('SELECT COALESCE(SUM(total-paid),0) total FROM sales')).first['total'] as num;
     final batches=await db.query('private_batches',orderBy:'created ASC,id ASC');
+    final sales=await db.query('sales');
     final saleAllocations=await db.query('sale_batch_allocations');
     final batchExpenses=await db.query('batch_expenses');
     final legacyExpenses=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) amount FROM expenses')).first['amount'] as num;
@@ -443,7 +444,9 @@ class DB {
       batchAllocatedTotals[bid]=(batchAllocatedTotals[bid]??0)+(a['kg'] as num).toDouble();
     }
     final batchIntegrity=allBatchRows.every((b)=>!batchAllocationOverage(batchAllocatedTotals[b['id'] as int]??0,b['net_kg'] as num));
-    final allocationIntegrityOk=invoiceIntegrity&&batchIntegrity;
+    final allocationRowsAll=await db.query('sale_batch_allocations');
+    final allocationReferencesOk=allocationRowsAll.every((a)=>salesRows.any((sale)=>sale['id']==a['sale_id'])&&allBatchRows.any((b)=>b['id']==a['batch_id']));
+    final allocationIntegrityOk=invoiceIntegrity&&batchIntegrity&&allocationReferencesOk;
     final profit=batchNetProfit(revenue,soldKg,unitCost);
     return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':soldKg<=netKg+0.0001&&unallocatedSalesKg<=0.0001&&allocationIntegrityOk,'profitFinal':remainingKg<=0.0001&&unallocatedSalesKg<=0.0001&&allocationIntegrityOk,'allocationIntegrityOk':allocationIntegrityOk,'expenseTotal':expenseTotal,'unallocatedSoldKg':unallocatedSalesKg,'allocations':allocatedSales,'expenseRows':expenseRows};
   }
