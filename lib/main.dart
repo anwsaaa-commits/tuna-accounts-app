@@ -848,16 +848,75 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       // Removed the aggregate approximate profit display until sales can be allocated to individual purchase batches.
       FilledButton.icon(onPressed:addEntry,icon:const Icon(Icons.add),label:const Text('إضافة عملية شراء')),
       const SizedBox(height:8),
-      FutureBuilder<List<Map<String,Object?>>>(future:expenseEntries,builder:(context,e){
-        if(!e.hasData)return const Card(child:ListTile(title:Text('إجمالي المصروفات'),subtitle:Text('جارٍ التحميل...')));
-        final expenseTotal=e.data!.fold<num>(0,(sum,row)=>sum+(row['amount'] as num));
-        return Column(children:[
-          Card(child:ListTile(title:const Text('إجمالي المصروفات الخاصة'),subtitle:Text(money(expenseTotal),style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))),
-          FilledButton.tonalIcon(onPressed:addExpense,icon:const Icon(Icons.add),label:const Text('إضافة مصروف')),
-          if(e.data!.isNotEmpty)const Align(alignment:Alignment.centerRight,child:Text('سجل المصروفات',style:TextStyle(fontWeight:FontWeight.bold))),
-          ...e.data!.map((row)=>Card(child:ListTile(title:Text(money(row['amount'] as num)),subtitle:Text('${row['note']}\\n${dateLabel(row['created'] as String)}'),isThreeLine:true,leading:const Icon(Icons.money_off,color:gold),trailing:PopupMenuButton<String>(tooltip:'خيارات المصروف',onSelected:(v){if(v=='edit')editExpense(row);if(v=='delete')removeExpense(row['id'] as int);},itemBuilder:(ctx)=>const [PopupMenuItem(value:'edit',child:Text('تعديل')),PopupMenuItem(value:'delete',child:Text('حذف'))]))))
-        ]);
-      }),
+      FutureBuilder<List<Map<String,Object?>>>(
+        future: expenseEntries,
+        builder: (context, e) {
+          if (!e.hasData) {
+            return const Card(
+              child: ListTile(
+                title: Text('إجمالي المصروفات'),
+                subtitle: Text('جارٍ التحميل...'),
+              ),
+            );
+          }
+          final expenseTotal = e.data!.fold<num>(
+            0,
+            (sum, row) => sum + (row['amount'] as num),
+          );
+          return Column(
+            children: [
+              Card(
+                child: ListTile(
+                  title: const Text('إجمالي المصروفات الخاصة'),
+                  subtitle: Text(
+                    money(expenseTotal),
+                    style: const TextStyle(
+                      color: gold,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: addExpense,
+                icon: const Icon(Icons.add),
+                label: const Text('إضافة مصروف'),
+              ),
+              if (e.data!.isNotEmpty)
+                const Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    'سجل المصروفات',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ...e.data!.map((row) {
+                return Card(
+                  child: ListTile(
+                    title: Text(money(row['amount'] as num)),
+                    subtitle: Text(
+                      '${row['note']}\\n${dateLabel(row['created'] as String)}',
+                    ),
+                    isThreeLine: true,
+                    leading: const Icon(Icons.money_off, color: gold),
+                    trailing: PopupMenuButton<String>(
+                      tooltip: 'خيارات المصروف',
+                      onSelected: (v) {
+                        if (v == 'edit') editExpense(row);
+                        if (v == 'delete') removeExpense(row['id'] as int);
+                      },
+                      itemBuilder: (ctx) => const [
+                        PopupMenuItem(value: 'edit', child: Text('تعديل')),
+                        PopupMenuItem(value: 'delete', child: Text('حذف')),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
+          );
+        },
+      ),
       FutureBuilder<num>(future:DB.instance.unallocatedSalesKg(),builder:(context,snapshot){if(!snapshot.hasData||snapshot.data!<=0.000001)return const SizedBox.shrink();return Card(child:ListTile(leading:const Icon(Icons.info_outline,color:gold),title:const Text('مبيعات غير مخصصة لدفعات الشراء'),subtitle:Text('${snapshot.data!.toStringAsFixed(3)} كجم\\nقد تشمل مبيعات المخزون القديم قبل بدء التتبع أو كمية تجاوزت الدفعات المسجلة. لا تُحتسب ضمن كشف ربح أي دفعة.')));}),
       const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
       if(rows.isEmpty)const Padding(padding:EdgeInsets.all(18),child:Text('لم تسجل مشتريات بعد',textAlign:TextAlign.center)),
