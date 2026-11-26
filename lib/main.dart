@@ -302,13 +302,13 @@ class DB {
     final allocatedBySale=<int,double>{};
     for(final a in saleAllocations) {
       final sid=a['sale_id'] as int;
-      allocatedBySale[sid]=(allocatedBySale[sid]??0)+(a['kg'] as num).toDouble();
+      allocatedBySale[sid]=(allocatedBySale[sid]??0.0)+(a['kg'] as num).toDouble();
     }
     var allocationIntegrityOk=sales.every((sale)=>!saleAllocationMismatch(sale['kg'] as num,allocatedBySale[sale['id'] as int]??0));
     final allocatedByBatch=<int,double>{};
     for(final a in saleAllocations) {
       final bid=a['batch_id'] as int;
-      allocatedByBatch[bid]=(allocatedByBatch[bid]??0)+(a['kg'] as num).toDouble();
+      allocatedByBatch[bid]=(allocatedByBatch[bid]??0.0)+(a['kg'] as num).toDouble();
     }
     for(final batch in batches) {
       if(batchAllocationOverage(allocatedByBatch[batch['id'] as int]??0,batch['net_kg'] as num)) allocationIntegrityOk=false;
@@ -434,14 +434,14 @@ class DB {
     final saleAllocatedTotals=<int,double>{};
     for(final a in await db.query('sale_batch_allocations')) {
       final sid=a['sale_id'] as int;
-      saleAllocatedTotals[sid]=(saleAllocatedTotals[sid]??0)+(a['kg'] as num).toDouble();
+      saleAllocatedTotals[sid]=(saleAllocatedTotals[sid]??0.0)+(a['kg'] as num).toDouble();
     }
     final invoiceIntegrity=salesRows.every((sale) => !saleAllocationMismatch((sale['kg'] as num),saleAllocatedTotals[sale['id'] as int]??0));
     final allBatchRows=await db.query('private_batches');
     final batchAllocatedTotals=<int,double>{};
     for(final a in await db.query('sale_batch_allocations')) {
       final bid=a['batch_id'] as int;
-      batchAllocatedTotals[bid]=(batchAllocatedTotals[bid]??0)+(a['kg'] as num).toDouble();
+      batchAllocatedTotals[bid]=(batchAllocatedTotals[bid]??0.0)+(a['kg'] as num).toDouble();
     }
     final batchIntegrity=allBatchRows.every((b)=>!batchAllocationOverage(batchAllocatedTotals[b['id'] as int]??0,b['net_kg'] as num));
     final allocationRowsAll=await db.query('sale_batch_allocations');
