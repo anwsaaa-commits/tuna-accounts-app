@@ -276,7 +276,7 @@ class DB {
     // they are shown in the total expenses but not distributed silently.
     final netProfit=(salesTotals['total'] as num)-costSold;
     final finalProfit=remainingKg<=0.0001;
-    return {'sales':salesTotals['total'] as num,'paid':salesTotals['paid'] as num,'weight':soldKg,'collections':collections,'debt':due-collections,'purchaseCost':purchaseCost,'costPerKg':netKg>0?purchaseCost/netKg:0.0,'costOfSold':costSold,'inventoryCost':stockCost,'stockNetKg':netKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':0,'netProfit':unallocatedKg>0.0001?0:netProfit,'unallocatedSoldKg':unallocatedKg,'profitReliable':unallocatedKg<=0.0001?1:0,'profitFinal':finalProfit&&unallocatedKg<=0.0001?1:0};
+    return {'sales':salesTotals['total'] as num,'paid':salesTotals['paid'] as num,'weight':soldKg,'collections':collections,'debt':due-collections,'purchaseCost':purchaseCost,'costPerKg':netKg>0?purchaseCost/netKg:0.0,'costOfSold':costSold,'inventoryCost':stockCost,'stockNetKg':netKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':legacyExpenses,'netProfit':unallocatedKg>0.0001?0:netProfit,'unallocatedSoldKg':unallocatedKg,'profitReliable':unallocatedKg<=0.0001?1:0,'profitFinal':finalProfit&&unallocatedKg<=0.0001?1:0};
   }
   Future<List<Map<String,Object?>>> reservations() async => (await database).query('reservations',orderBy:'created DESC');
   Future<int> addReservation(String name,String phone,double kg,int price,int deposit,String note) async {
@@ -1033,7 +1033,7 @@ class ReportsPage extends StatelessWidget{
                       pdfText('المخزون الصافي المتبقي: ${number(totals['remainingKg'])} كجم', font),
                       pdfText('قيمة تكلفة المخزون المتبقي: ${number(totals['inventoryCost'])} ر.ي', font),
                       pdfText('إجمالي المصروفات المسجلة: ${number(totals['expenses'])} ر.ي', font),
-                      pdfText('المصروفات المحملة على المبيعات: ${number(totals['expensesAllocated'])} ر.ي', font),
+                      pdfText('المصروفات القديمة غير المربوطة بدفعة: ${number(totals['expensesAllocated'])} ر.ي (لا تدخل في ربح الدفعات)', font),
                       if ((totals['unallocatedSoldKg'] ?? 0) > 0.0001)
                         pdfText('تنبيه: وزن مبيعات غير موزع على المخزون: ${number(totals['unallocatedSoldKg']!)} كجم؛ الربح غير محسوب لوجود نقص.', font, fontSize: 11, color: pdf.PdfColor.fromHex('#B3261E')),
                     ],
@@ -1084,7 +1084,7 @@ class ReportsPage extends StatelessWidget{
           'remainingKg':'المخزون الصافي المتبقي',
           'inventoryCost':'تكلفة المخزون المتبقي',
           'expenses':'إجمالي المصروفات',
-          'expensesAllocated':'مصروفات محسوبة على المباع',
+          'expensesAllocated':'مصروفات قديمة غير مربوطة بدفعة (خارج الربح)',
           'unallocatedSoldKg':'وزن مبيعات غير موزع (مراجعة المخزون)',
         };
         return ListView(
