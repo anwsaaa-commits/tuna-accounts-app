@@ -32,7 +32,7 @@ double batchUnitCost(num purchaseCost,num expenses,num netKg) {
   if(netKg<=0)return 0;
   return (purchaseCost+expenses)/netKg;
 }
-double batchNetProfit(num revenue,num soldKg,num unitCost) => revenue-(soldKg*unitCost);
+double batchNetProfit(num revenue,num soldKg,num unitCost) => (revenue-(soldKg*unitCost)).toDouble();
 
 String money(num value) => '${NumberFormat('#,##0', 'en').format(value)} ر.ي';
 String dateLabel(String value) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime.parse(value));
