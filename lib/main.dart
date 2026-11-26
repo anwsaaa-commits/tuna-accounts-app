@@ -164,6 +164,7 @@ class DB {
           final batches = await db.query('private_batches', orderBy: 'created ASC,id ASC');
           final oldSales = await db.query('sales', orderBy: 'created ASC,id ASC');
           final remaining = batches.map((b) => (b['net_kg'] as num).toDouble()).toList();
+          var migrationUnallocatedKg=0.0;
           for (final sale in oldSales) {
             var qty = (sale['kg'] as num).toDouble();
             for (var i=0; i<batches.length && qty>0.000001; i++) {
@@ -173,7 +174,9 @@ class DB {
               await db.insert('sale_batch_allocations', {'sale_id':sale['id'],'batch_id':batches[i]['id'],'kg':take});
               remaining[i] -= take; qty -= take;
             }
+            if(qty>0.000001)migrationUnallocatedKg+=qty;
           }
+          await db.insert('settings',{'key':'legacy_unallocated_sales_kg','value':migrationUnallocatedKg.toString()},conflictAlgorithm:ConflictAlgorithm.replace);
         }
       },
       onCreate: (db, version) async {
@@ -188,6 +191,7 @@ class DB {
         await db.execute('CREATE TABLE sale_batch_allocations(sale_id INTEGER NOT NULL,batch_id INTEGER NOT NULL,kg REAL NOT NULL,PRIMARY KEY(sale_id,batch_id),FOREIGN KEY(sale_id) REFERENCES sales(id),FOREIGN KEY(batch_id) REFERENCES private_batches(id))');
         await db.insert('settings', {'key':'shop','value':'تونة بلس'});
         await db.insert('settings', {'key':'price','value':'6500'});
+        await db.insert('settings', {'key':'legacy_unallocated_sales_kg','value':'0'});
         await db.insert('settings', {'key':'bank','value':'254127488'});
         await db.insert('settings', {'key':'owner','value':'محمد صالح بن صالح علي الخلاقي'});
         await db.insert('settings', {'key':'address','value':'فوه المتضررين بجانب مسجد هائل خلف البريد'});
@@ -261,7 +265,7 @@ class DB {
     final purchaseCost=batches.fold<num>(0,(sum,b)=>sum+(b['total_cost'] as num));
     final soldKg=salesTotals['weight'] as num;
     var costSold=0.0,stockCost=0.0,remainingKg=0.0,expenseTotal=legacyExpenses;
-    var unallocatedKg=0.0;
+    var unallocatedKg=double.tryParse(await setting('legacy_unallocated_sales_kg','0'))??0.0;
     for(final batch in batches){
       final id=batch['id'] as int, net=(batch['net_kg'] as num).toDouble(),baseCost=(batch['total_cost'] as num).toDouble();
       final exp=batchExpenses.where((e)=>e['batch_id']==id).fold<num>(0,(sum,e)=>sum+(e['amount'] as num)).toDouble();
@@ -369,8 +373,9 @@ class DB {
     }
     final remainingKg=(netKg-soldKg).clamp(0.0,netKg);
     final costOfSold=soldKg*unitCost;
+    final migrationUnallocated=double.tryParse(await setting('legacy_unallocated_sales_kg','0'))??0.0;
     final profit=revenue-costOfSold;
-    return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':soldKg<=netKg+0.0001,'profitFinal':remainingKg<=0.0001,'expenseTotal':expenseTotal,'unallocatedSoldKg':0.0,'allocations':allocatedSales,'expenseRows':expenseRows};
+    return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':soldKg<=netKg+0.0001&&migrationUnallocated<=0.0001,'profitFinal':remainingKg<=0.0001&&migrationUnallocated<=0.0001,'expenseTotal':expenseTotal,'unallocatedSoldKg':migrationUnallocated,'allocations':allocatedSales,'expenseRows':expenseRows};
   }
   Future<void> updatePrivateBatch(int id,double grossKg,int purchasePrice,double netKg,String note) async {
     if(!grossKg.isFinite || grossKg<=0 || purchasePrice<=0 || !netKg.isFinite || netKg<=0 || netKg>grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
