@@ -1357,7 +1357,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
         if(note.text.trim().isEmpty){showMessage(ctx,'اكتب بيان المصروف');return;}
         try{await DB.instance.updateBatchExpense(expense['id'] as int,value,note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}
         catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}
-      },child:const Text('حفظ'))]);
+      },child:const Text('حفظ'))]));
     }finally{amount.dispose();note.dispose();}
   }
   Future<void> deleteBatchExpenseDialog(Map<String,Object?> expense) async {
