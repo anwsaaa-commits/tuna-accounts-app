@@ -325,7 +325,7 @@ class DB {
     return db.insert('batch_expenses',{'batch_id':batchId,'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()});
   }
   Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note, {int batchExpense=0, String expenseNote='مصاريف شراء'}) async {
-    if (!grossKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || !netKg.isFinite || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
+    if (!grossKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || !netKg.isFinite || netKg <= 0 || netKg > grossKg || batchExpense < 0) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء والمصروف');
     final db=await database;
     return db.transaction((txn)async{
       final id=await txn.insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':DateTime.now().toIso8601String(),'note':note.trim()});
@@ -1284,6 +1284,25 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       TextField(controller:note,decoration:const InputDecoration(labelText:'ملاحظة')),
     ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.updatePrivateBatch(row['id'] as int,double.parse(gross.text),int.parse(price.text),double.parse(net.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ التعديل'))]));
   }
+  Future<void> addBatchExpenseDialog(int batchId) async {
+    final amount=TextEditingController(),note=TextEditingController();
+    try{
+      await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
+        title:const Text('إضافة مصروف للدفعة'),
+        content:Column(mainAxisSize:MainAxisSize.min,children:[
+          TextField(controller:amount,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'المبلغ (ريال)')),
+          TextField(controller:note,decoration:const InputDecoration(labelText:'بيان المصروف')),
+        ]),
+        actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{
+          final value=int.tryParse(amount.text.trim());
+          if(value==null||value<=0){showMessage(ctx,'أدخل مبلغًا صحيحًا');return;}
+          if(note.text.trim().isEmpty){showMessage(ctx,'اكتب بيان المصروف');return;}
+          try{await DB.instance.addBatchExpense(batchId,value,note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}
+          catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}
+        },child:const Text('حفظ المصروف'))]
+      ));
+    }finally{amount.dispose();note.dispose();}
+  }
   Future<void> editExpense(Map<String,Object?> row) async {
     final amount=TextEditingController(text:(row['amount'] as num).toString());
     final note=TextEditingController(text:row['note'] as String? ?? '');
@@ -1434,7 +1453,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       }),
       const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
       if(rows.isEmpty)const Padding(padding:EdgeInsets.all(18),child:Text('لم تسجل مشتريات بعد',textAlign:TextAlign.center)),
-      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;return Card(child:ListTile(title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • الإجمالي: ${money(tc)}'),isThreeLine:true,trailing:PopupMenuButton<String>(onSelected:(action)async{if(action=='statement'){await showBatchStatement(r);}else if(action=='edit'){await editEntry(r);}else if(action=='delete'){try{await DB.instance.deletePrivateBatch(r['id'] as int);if(mounted)setState(reloadEntries);}catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}}},itemBuilder:(_)=>const [PopupMenuItem(value:'statement',child:Text('كشف الشحنة والربح')),PopupMenuItem(value:'edit',child:Text('تعديل عملية الشراء')),PopupMenuItem(value:'delete',child:Text('حذف عملية الشراء'))],child:const Icon(Icons.more_vert))));})
+      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;return Card(child:ListTile(title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • الإجمالي: ${money(tc)}'),isThreeLine:true,trailing:PopupMenuButton<String>(onSelected:(action)async{if(action=='statement'){await showBatchStatement(r);}else if(action=='expense'){await addBatchExpenseDialog(r['id'] as int);}else if(action=='edit'){await editEntry(r);}else if(action=='delete'){try{await DB.instance.deletePrivateBatch(r['id'] as int);if(mounted)setState(reloadEntries);}catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}}},itemBuilder:(_)=>const [PopupMenuItem(value:'statement',child:Text('كشف الشحنة والربح')),PopupMenuItem(value:'expense',child:Text('إضافة مصروف للدفعة')),PopupMenuItem(value:'edit',child:Text('تعديل عملية الشراء')),PopupMenuItem(value:'delete',child:Text('حذف عملية الشراء'))],child:const Icon(Icons.more_vert))));})
     ]);
   }));
 }
