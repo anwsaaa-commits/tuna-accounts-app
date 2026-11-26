@@ -821,7 +821,16 @@ class _InvoicePageState extends State<InvoicePage>{
         leading:const Icon(Icons.receipt,color:gold),
         trailing:Wrap(children:[
           IconButton(tooltip:'عرض الفاتورة',icon:const Icon(Icons.visibility,color:gold),onPressed:()=>openInvoice(v)),
-          IconButton(icon:const Icon(Icons.delete,color:Colors.red),onPressed:()async{try{await DB.instance.deleteSale(v['id'] as int);setState(()=>future=DB.instance.sales());}catch(e){showMessage(context,e.toString());}})
+          IconButton(icon:const Icon(Icons.delete,color:Colors.red),onPressed:()async{
+          final confirmed=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+            title:const Text('تأكيد حذف الفاتورة'),
+            content:Text('هل تريد حذف الفاتورة ${v['invoice']}؟\nلا يمكن التراجع عن الحذف.'),
+            actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),style:FilledButton.styleFrom(backgroundColor:Colors.red),child:const Text('حذف الفاتورة'))],
+          ));
+          if(confirmed!=true)return;
+          try{await DB.instance.deleteSale(v['id'] as int);if(mounted)setState(()=>future=DB.instance.sales());}
+          catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}
+        })
         ])
       ))),
     ]));
