@@ -945,6 +945,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
           },
         );
       }),
+    ]);
   }));
 }
 class SettingsPage extends StatefulWidget{const SettingsPage({super.key});@override State<SettingsPage> createState()=>_SettingsPageState();}
