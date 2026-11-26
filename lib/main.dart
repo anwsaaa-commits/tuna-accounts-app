@@ -1491,7 +1491,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
           Text('المتبقي: ${(report['remainingKg'] as num).toStringAsFixed(3)} كجم'),
           Text('إيرادات المبيعات الموزعة: ${money(report['revenue'] as num)}'),
           Text('تكلفة وزن المباع: ${money(report['costOfSold'] as num)}'),
-          Text('حصة المصروفات العامة: ${money(report['expenseShare'] as num)}'),
+          Text('مصاريف الدفعة المحملة على الوزن المباع: ${money(report['expenseShare'] as num)}'),
           Text((report['profitReliable'] as bool? ?? false)?((report['profitFinal'] as bool? ?? false)?'الربح النهائي بعد تصفية الدفعة: ${money(report['profit'] as num)}':'الربح المؤقت للدفعة: ${money(report['profit'] as num)}'):'الربح غير محسوب لوجود خلل في توزيع المخزون',style:TextStyle(color:(report['profitReliable'] as bool? ?? false)?gold:Colors.orange,fontWeight:FontWeight.bold)),
           const SizedBox(height:10),
           const Text('مصروفات هذه الدفعة',style:TextStyle(fontWeight:FontWeight.bold)),
@@ -1509,7 +1509,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
             isThreeLine:true,
           ))),
           if((report['unallocatedSoldKg'] as num)>0.0001)Text('تنبيه: يوجد وزن مبيعات غير موزع على الشحنات بمقدار ${(report['unallocatedSoldKg'] as num).toStringAsFixed(3)} كجم؛ يلزم مراجعة المخزون قبل اعتماد الربح.',style:const TextStyle(color:Colors.orange,fontWeight:FontWeight.bold)),
-            const Text('التوزيع حسابي بطريقة FIFO (الأقدم شراءً أولاً). المصروفات العامة موزعة حسب الوزن المباع من إجمالي الوزن الصافي المشتراة، وليس ربطاً دائماً محفوظاً بين الفواتير والشحنات.',style:TextStyle(fontSize:12)),
+            const Text('كل فاتورة مرتبطة بالدفعة التي اخترتها عند البيع. مصروفات الدفعة تدخل في رأس مالها وتكلفتها، ولا يتم خلطها مع الدفعات الأخرى.',style:TextStyle(fontSize:12)),
         ]))),
         actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إغلاق'))],
       ));
