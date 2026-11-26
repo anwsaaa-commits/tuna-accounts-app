@@ -732,31 +732,101 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
     if(confirm==true){try{await DB.instance.deletePrivateBatch(id);if(mounted)setState(reloadEntries);}catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}}
   }
   Future<void> addExpense() async {
-    final batches=await DB.instance.privateBatches();
-    if(!mounted)return;
-    final amount=TextEditingController(),note=TextEditingController();
+    final batches = await DB.instance.privateBatches();
+    if (!mounted) return;
+    final amount = TextEditingController();
+    final note = TextEditingController();
     int? selectedBatchId;
-    await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('تسجيل مصروف خاص'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-      TextField(controller:amount,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'مبلغ المصروف (ريال)')),
-      TextField(controller:note,maxLines:2,decoration:const InputDecoration(labelText:'بيان المصروف / ملاحظات')),
-      DropdownButtonFormField<int?>(value:selectedBatchId,decoration:const InputDecoration(labelText:'ربط المصروف بعملية شراء (اختياري)'),items:[
-        const DropdownMenuItem<int?>(value:null,child:Text('مصروف عام غير مرتبط بعملية شراء')),
-        ...batches.map((b)=>DropdownMenuItem<int?>(value:b['id'] as int,child:Text(dateLabel(b['created'] as String))))
-      ],onChanged:(v)=>setDialog(()=>selectedBatchId=v)),
-      const SizedBox(height:8),const Text('عند ربط المصروف بعملية شراء، يدخل في حساب تكلفة الكيلو لهذه الشحنة. المصروف العام لا يوزع تلقائيًا على الشحنات.')
-    ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.addExpense(int.parse(amount.text),note.text,batchId:selectedBatchId);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ المصروف'))]));
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          title: const Text('تسجيل مصروف خاص'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(controller: amount, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'مبلغ المصروف (ريال)')),
+              TextField(controller: note, maxLines: 2, decoration: const InputDecoration(labelText: 'بيان المصروف / ملاحظات')),
+              DropdownButtonFormField<int?>(
+                value: selectedBatchId,
+                decoration: const InputDecoration(labelText: 'ربط المصروف بعملية شراء (اختياري)'),
+                items: [
+                  const DropdownMenuItem<int?>(value: null, child: Text('مصروف عام غير مرتبط بعملية شراء')),
+                  ...batches.map((b) => DropdownMenuItem<int?>(value: b['id'] as int, child: Text(dateLabel(b['created'] as String)))),
+                ],
+                onChanged: (v) => setDialog(() => selectedBatchId = v),
+              ),
+              const SizedBox(height: 8),
+              const Text('عند ربط المصروف بعملية شراء، يدخل في حساب تكلفة الكيلو لهذه الشحنة. المصروف العام لا يوزع تلقائيًا على الشحنات.'),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+            FilledButton(
+              onPressed: () async {
+                try {
+                  await DB.instance.addExpense(int.parse(amount.text), note.text, batchId: selectedBatchId);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) setState(reloadEntries);
+                } catch (e) {
+                  showMessage(ctx, e.toString().replaceFirst('Exception: ', ''));
+                }
+              },
+              child: const Text('حفظ المصروف'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
-  Future<void> editExpense(Map<String,Object?> row) async {
-    final amount=TextEditingController(text:(row['amount'] as num).toString());
-    final note=TextEditingController(text:row['note'] as String? ?? '');
-    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('تعديل المصروف'),content:Column(mainAxisSize:MainAxisSize.min,children:[
-      TextField(controller:amount,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'مبلغ المصروف (ريال)')),
-      TextField(controller:note,maxLines:2,decoration:const InputDecoration(labelText:'بيان المصروف')),
-    ]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{await DB.instance.updateExpense(row['id'] as int,int.parse(amount.text),note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ التعديل'))]));
+  Future<void> editExpense(Map<String, Object?> row) async {
+    final amount = TextEditingController(text: (row['amount'] as num).toString());
+    final note = TextEditingController(text: row['note'] as String? ?? '');
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تعديل المصروف'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: amount, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'مبلغ المصروف (ريال)')),
+          TextField(controller: note, maxLines: 2, decoration: const InputDecoration(labelText: 'بيان المصروف')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          FilledButton(
+            onPressed: () async {
+              try {
+                await DB.instance.updateExpense(row['id'] as int, int.parse(amount.text), note.text);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) setState(reloadEntries);
+              } catch (e) {
+                showMessage(ctx, e.toString().replaceFirst('Exception: ', ''));
+              }
+            },
+            child: const Text('حفظ التعديل'),
+          ),
+        ],
+      ),
+    );
   }
   Future<void> removeExpense(int id) async {
-    final confirm=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حذف المصروف'),content:const Text('هل تريد حذف هذا المصروف نهائيًا؟'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حذف'))]));
-    if(confirm==true){try{await DB.instance.deleteExpense(id);if(mounted)setState(reloadEntries);}catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}}
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف المصروف'),
+        content: const Text('هل تريد حذف هذا المصروف نهائيًا؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف')),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      try {
+        await DB.instance.deleteExpense(id);
+        if (mounted) setState(reloadEntries);
+      } catch (e) {
+        if (mounted) showMessage(context, e.toString().replaceFirst('Exception: ', ''));
+      }
+    }
   }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('حسابات الشراء والمصروفات الخاصة')),body:FutureBuilder<List<Map<String,Object?>>>(future:entries,builder:(context,s){
     if(s.hasError)return Center(child:Text('خطأ: ${s.error}'));
