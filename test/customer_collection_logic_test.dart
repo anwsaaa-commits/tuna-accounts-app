@@ -2,6 +2,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tuna_sales_ledger/main.dart';
 
 void main() {
+  group('invoice financial validation guard', () {
+    test('cash invoice must be fully paid', () {
+      expect(saleFinancialValuesAllowed(10000, 10000, 'نقدي', false), isTrue);
+      expect(saleFinancialValuesAllowed(10000, 9999, 'نقدي', true), isFalse);
+    });
+    test('credit invoice needs customer and paid cannot exceed total', () {
+      expect(saleFinancialValuesAllowed(10000, 3000, 'آجل', true), isTrue);
+      expect(saleFinancialValuesAllowed(10000, 3000, 'آجل', false), isFalse);
+      expect(saleFinancialValuesAllowed(10000, 10001, 'آجل', true), isFalse);
+    });
+    test('rejects zero, negative, non-finite, and unknown type values', () {
+      expect(saleFinancialValuesAllowed(0, 0, 'نقدي', false), isFalse);
+      expect(saleFinancialValuesAllowed(10000, -1, 'آجل', true), isFalse);
+      expect(saleFinancialValuesAllowed(double.nan, 0, 'آجل', true), isFalse);
+      expect(saleFinancialValuesAllowed(10000, double.infinity, 'آجل', true), isFalse);
+      expect(saleFinancialValuesAllowed(10000, 0, 'شيء آخر', true), isFalse);
+    });
+  });
+
+
   group('invoice deletion protection with pooled customer receipts', () {
     test('allows deletion when no receipts would be orphaned', () {
       expect(invoiceDeletionAllowed(12000, 7000, 5000), isTrue);
