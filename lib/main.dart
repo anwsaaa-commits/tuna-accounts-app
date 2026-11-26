@@ -59,6 +59,15 @@ bool collectionAmountAllowed(num outstanding, num amount) {
   return amount <= outstanding;
 }
 
+bool invoiceDeletionAllowed(num totalOutstanding, num targetOutstanding, num collected) {
+  if (!totalOutstanding.isFinite || !targetOutstanding.isFinite || !collected.isFinite ||
+      totalOutstanding < 0 || targetOutstanding < 0 || collected < 0 ||
+      targetOutstanding > totalOutstanding) return false;
+  // Pooled customer receipts must remain covered by the outstanding balance
+  // after the invoice is removed; otherwise deletion would create orphaned receipts.
+  return collected <= totalOutstanding - targetOutstanding;
+}
+
 bool saleAllocationMismatch(num saleKg,num allocatedKg,{double tolerance=0.0001}) {
   if (!saleKg.isFinite || !allocatedKg.isFinite || saleKg < 0 || allocatedKg < 0) return true;
   return (saleKg-allocatedKg).abs()>tolerance;
@@ -501,7 +510,7 @@ class DB {
         final remaining=(await txn.rawQuery('SELECT COALESCE(SUM(total-paid),0) v FROM sales WHERE customer_id=?',[cid])).first['v'] as num;
         final collected=(await txn.rawQuery('SELECT COALESCE(SUM(amount),0) v FROM collections WHERE customer_id=?',[cid])).first['v'] as num;
         final saleOutstanding=(sale['total'] as num)-(sale['paid'] as num);
-        if(collected>remaining-saleOutstanding) throw Exception('لا يمكن حذف الفاتورة؛ توجد تحصيلات لا يمكن ربطها بعد الحذف.');
+        if(!invoiceDeletionAllowed(remaining,saleOutstanding,collected)) throw Exception('لا يمكن حذف الفاتورة؛ توجد تحصيلات لا يمكن ربطها بعد الحذف.');
       }
       await txn.delete('sale_batch_allocations',where:'sale_id=?',whereArgs:[id]);
       await txn.delete('sales',where:'id=?',whereArgs:[id]);
