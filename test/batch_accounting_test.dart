@@ -61,6 +61,17 @@ void main() {
       expect(batchAllocationOverage(5, double.infinity), isTrue);
     });
 
+    test('global net profit deducts general expenses separately from batch cost', () {
+      // Batch cost already includes batch expenses; only general expenses are deducted here.
+      expect(globalNetProfit(200000, 120000, 15000), 65000);
+    });
+
+    test('global profit helper rejects invalid values', () {
+      expect(globalNetProfit(double.nan, 120000, 15000), 0);
+      expect(globalNetProfit(200000, -1, 15000), 0);
+      expect(globalNetProfit(200000, 120000, double.infinity), 0);
+    });
+
     test('zero net weight never divides by zero', () {
       expect(batchUnitCost(150000, 27000, 0), 0);
     });
