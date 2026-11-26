@@ -28,6 +28,12 @@ Future<void> main() async {
   await DB.instance.database;
   runApp(const TunaApp());
 }
+double batchUnitCost(num purchaseCost,num expenses,num netKg) {
+  if(netKg<=0)return 0;
+  return (purchaseCost+expenses)/netKg;
+}
+double batchNetProfit(num revenue,num soldKg,num unitCost) => revenue-(soldKg*unitCost);
+
 String money(num value) => '${NumberFormat('#,##0', 'en').format(value)} ر.ي';
 String dateLabel(String value) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime.parse(value));
 
@@ -354,7 +360,7 @@ class DB {
     final expenseRows=await db.query('batch_expenses',where:'batch_id=?',whereArgs:[batchId]);
     final expenseTotal=expenseRows.fold<num>(0,(sum,e)=>sum+(e['amount'] as num)).toDouble();
     final capital=baseCost+expenseTotal;
-    final unitCost=netKg>0?capital/netKg:0.0;
+    final unitCost=batchUnitCost(baseCost,expenseTotal,netKg);
     final allocationRows=await db.query('sale_batch_allocations',where:'batch_id=?',whereArgs:[batchId]);
     final salesRows=await db.query('sales',orderBy:'created ASC,id ASC');
     double soldKg=0,revenue=0;
@@ -374,7 +380,7 @@ class DB {
     final remainingKg=(netKg-soldKg).clamp(0.0,netKg);
     final costOfSold=soldKg*unitCost;
     final migrationUnallocated=double.tryParse(await setting('legacy_unallocated_sales_kg','0'))??0.0;
-    final profit=revenue-costOfSold;
+    final profit=batchNetProfit(revenue,soldKg,unitCost);
     return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':soldKg<=netKg+0.0001&&migrationUnallocated<=0.0001,'profitFinal':remainingKg<=0.0001&&migrationUnallocated<=0.0001,'expenseTotal':expenseTotal,'unallocatedSoldKg':migrationUnallocated,'allocations':allocatedSales,'expenseRows':expenseRows};
   }
   Future<void> updatePrivateBatch(int id,double grossKg,int purchasePrice,double netKg,String note) async {
