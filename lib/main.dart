@@ -791,8 +791,31 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       FutureBuilder<num>(future:DB.instance.unallocatedSalesKg(),builder:(context,snapshot){if(!snapshot.hasData||snapshot.data!<=0.000001)return const SizedBox.shrink();return Card(child:ListTile(leading:const Icon(Icons.info_outline,color:gold),title:const Text('مبيعات غير مخصصة لدفعات الشراء'),subtitle:Text('${snapshot.data!.toStringAsFixed(3)} كجم\\nقد تشمل مبيعات المخزون القديم قبل بدء التتبع أو كمية تجاوزت الدفعات المسجلة. لا تُحتسب ضمن كشف ربح أي دفعة.')));}),
       const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
       if(rows.isEmpty)const Padding(padding:EdgeInsets.all(18),child:Text('لم تسجل مشتريات بعد',textAlign:TextAlign.center)),
-      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;final batchId=r['id'] as int;return FutureBuilder<num>(future:DB.instance.expensesForBatch(batchId),builder:(context,ex){final batchExpenses=ex.data??0;final adjustedTotal=tc+batchExpenses;final adjustedPerKg=n==0?0:adjustedTotal/n;return Card(child:ListTile(onTap:()=>showBatchStatement(r),title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • تكلفة الشراء: ${money(tc)}\nمصروفات مرتبطة: ${money(batchExpenses)} • الإجمالي الحقيقي: ${money(adjustedTotal)}'),isThreeLine:true,trailing:PopupMenuButton<String>(tooltip:'خيارات عملية الشراء',onSelected:(v){if(v=='edit')editBatch(r);if(v=='delete')removeBatch(batchId);},itemBuilder:(ctx)=>const [PopupMenuItem(value:'edit',child:Text('تعديل')),PopupMenuItem(value:'delete',child:Text('حذف'))])));}})
-    ]);
+      ...rows.map((r){
+        final g=r['gross_kg'] as num;
+        final n=r['net_kg'] as num;
+        final pc=r['purchase_price'] as num;
+        final tc=r['total_cost'] as num;
+        final batchId=r['id'] as int;
+        return FutureBuilder<num>(
+          future:DB.instance.expensesForBatch(batchId),
+          builder:(context,ex){
+            final batchExpenses=ex.data??0;
+            final adjustedTotal=tc+batchExpenses;
+            return Card(child:ListTile(
+              onTap:()=>showBatchStatement(r),
+              title:Text(dateLabel(r['created'] as String)),
+              subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\\nشراء الكيلو: ${money(pc)} • تكلفة الشراء: ${money(tc)}\\nمصروفات مرتبطة: ${money(batchExpenses)} • الإجمالي الحقيقي: ${money(adjustedTotal}'),
+              isThreeLine:true,
+              trailing:PopupMenuButton<String>(
+                tooltip:'خيارات عملية الشراء',
+                onSelected:(v){if(v=='edit')editBatch(r);if(v=='delete')removeBatch(batchId);},
+                itemBuilder:(ctx)=>const [PopupMenuItem(value:'edit',child:Text('تعديل')),PopupMenuItem(value:'delete',child:Text('حذف'))],
+              ),
+            ));
+          },
+        );
+      }),
   }));
 }
 class SettingsPage extends StatefulWidget{const SettingsPage({super.key});@override State<SettingsPage> createState()=>_SettingsPageState();}
