@@ -38,6 +38,12 @@ double batchNetProfit(num revenue,num soldKg,num unitCost) {
       revenue < 0 || soldKg < 0 || unitCost < 0) return 0;
   return (revenue - (soldKg * unitCost)).toDouble();
 }
+double unallocatedSaleKg(num totalSold,num allocated,num migrationWarning) {
+  if (!totalSold.isFinite || !allocated.isFinite || !migrationWarning.isFinite ||
+      totalSold < 0 || allocated < 0 || migrationWarning < 0) return 0;
+  final missing=(totalSold-allocated).clamp(0.0,double.infinity);
+  return migrationWarning>missing?migrationWarning.toDouble():missing.toDouble();
+}
 
 String money(num value) => '${NumberFormat('#,##0', 'en').format(value)} ر.ي';
 String dateLabel(String value) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime.parse(value));
@@ -280,8 +286,7 @@ class DB {
     // Use the larger value to avoid double-counting historical migration gaps.
     final migratedGap=double.tryParse(await setting('legacy_unallocated_sales_kg','0'))??0.0;
     final allocatedSalesKg=saleAllocations.fold<num>(0,(sum,a)=>sum+(a['kg'] as num));
-    final missingAllocationKg=((soldKg-allocatedSalesKg).toDouble()).clamp(0.0,double.infinity);
-    var unallocatedKg=migratedGap>missingAllocationKg?migratedGap:missingAllocationKg;
+    var unallocatedKg=unallocatedSaleKg(soldKg,allocatedSalesKg,migratedGap);
     for(final batch in batches){
       final id=batch['id'] as int, net=(batch['net_kg'] as num).toDouble(),baseCost=(batch['total_cost'] as num).toDouble();
       final exp=batchExpenses.where((e)=>e['batch_id']==id).fold<num>(0,(sum,e)=>sum+(e['amount'] as num)).toDouble();
@@ -392,8 +397,7 @@ class DB {
     final migrationUnallocated=double.tryParse(await setting('legacy_unallocated_sales_kg','0'))??0.0;
     final allSalesKg=(await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
     final allAllocatedKg=(await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations')).first['kg'] as num;
-    final allocationGap=((allSalesKg-allAllocatedKg).toDouble()).clamp(0.0,double.infinity);
-    final unallocatedSalesKg=migrationUnallocated>allocationGap?migrationUnallocated:allocationGap;
+    final unallocatedSalesKg=unallocatedSaleKg(allSalesKg,allAllocatedKg,migrationUnallocated);
     final profit=batchNetProfit(revenue,soldKg,unitCost);
     return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':soldKg<=netKg+0.0001&&unallocatedSalesKg<=0.0001,'profitFinal':remainingKg<=0.0001&&unallocatedSalesKg<=0.0001,'expenseTotal':expenseTotal,'unallocatedSoldKg':unallocatedSalesKg,'allocations':allocatedSales,'expenseRows':expenseRows};
   }
