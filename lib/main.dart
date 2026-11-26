@@ -1157,6 +1157,8 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
         Text('تكلفة الشراء الأساسية: ${money(cost)}'),
         Text('إجمالي إيرادات المبيعات: ${money(totals['sales']??0)}'),
         Text('تكلفة البضاعة المباعة (شاملة مصروف الدفعات): ${money(totals['costOfSold']??0)}'),
+        Text('إجمالي المصروفات المسجلة: ${money(totals['expenses']??0)}'),
+        Text('المصروفات القديمة غير المربوطة بدفعة: ${money(totals['expensesAllocated']??0)} (لا تدخل في الربح)',style:const TextStyle(fontSize:12,color:Colors.orange)),
         Text('الربح المؤقت: ${money(totals['netProfit']??0)}'),
         const Divider(),
         TextField(controller:actualController,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الفعلي الذي قمت بوزنه (كجم)',border:OutlineInputBorder()),onChanged:(_)=>setDialog((){})),
