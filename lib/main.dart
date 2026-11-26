@@ -316,6 +316,14 @@ class DB {
   }
   Future<int> deleteExpense(int id) async =>
       (await database).delete('expenses', where:'id=?', whereArgs:[id]);
+  Future<int> addBatchExpense(int batchId,int amount,String note) async {
+    if(amount<=0)throw Exception('أدخل مبلغ مصروف صحيح');
+    if(note.trim().isEmpty)throw Exception('اكتب بيان المصروف');
+    final db=await database;
+    final batch=await db.query('private_batches',where:'id=?',whereArgs:[batchId],limit:1);
+    if(batch.isEmpty)throw Exception('دفعة الشراء غير موجودة');
+    return db.insert('batch_expenses',{'batch_id':batchId,'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()});
+  }
   Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note, {int batchExpense=0, String expenseNote='مصاريف شراء'}) async {
     if (!grossKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || !netKg.isFinite || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
     final db=await database;
@@ -365,11 +373,9 @@ class DB {
     await db.transaction((txn) async {
       final oldRows=await txn.query('private_batches',where:'id=?',whereArgs:[id],limit:1);
       if(oldRows.isEmpty) throw Exception('عملية الشراء غير موجودة');
-      final sold=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
-      final stock=(await txn.rawQuery('SELECT COALESCE(SUM(net_kg),0) kg FROM private_batches')).first['kg'] as num;
       final old=oldRows.first;
-      final resultingNet=stock-(old['net_kg'] as num)+netKg;
-      if(resultingNet+0.0001<sold) throw Exception('لا يمكن تعديل الشراء: المخزون الصافي الناتج أقل من الوزن المباع.');
+      final soldForBatch=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations WHERE batch_id=?',[id])).first['kg'] as num;
+      if(netKg+0.0001<soldForBatch) throw Exception('لا يمكن تعديل الشراء: الصافي أقل من الوزن المباع من هذه الدفعة.');
       await txn.update('private_batches',{'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'note':note.trim()},where:'id=?',whereArgs:[id]);
     });
   }
@@ -379,10 +385,9 @@ class DB {
     await db.transaction((txn) async {
       final oldRows=await txn.query('private_batches',where:'id=?',whereArgs:[id],limit:1);
       if(oldRows.isEmpty) throw Exception('عملية الشراء غير موجودة');
-      final sold=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
-      final stock=(await txn.rawQuery('SELECT COALESCE(SUM(net_kg),0) kg FROM private_batches')).first['kg' ] as num;
-      final old=oldRows.first;
-      if(stock-(old['net_kg'] as num)+0.0001<sold) throw Exception('لا يمكن حذف الشراء لأنه سيجعل المخزون أقل من الوزن المباع.');
+      final allocated=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations WHERE batch_id=?',[id])).first['kg'] as num;
+      if(allocated>0.0001) throw Exception('لا يمكن حذف دفعة مرتبطة بمبيعات. احذف أو عدّل الفواتير المرتبطة أولاً.');
+      await txn.delete('batch_expenses',where:'batch_id=?',whereArgs:[id]);
       await txn.delete('private_batches',where:'id=?',whereArgs:[id]);
     });
   }
