@@ -373,7 +373,6 @@ class DB {
     await db.transaction((txn) async {
       final oldRows=await txn.query('private_batches',where:'id=?',whereArgs:[id],limit:1);
       if(oldRows.isEmpty) throw Exception('عملية الشراء غير موجودة');
-      final old=oldRows.first;
       final soldForBatch=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations WHERE batch_id=?',[id])).first['kg'] as num;
       if(netKg+0.0001<soldForBatch) throw Exception('لا يمكن تعديل الشراء: الصافي أقل من الوزن المباع من هذه الدفعة.');
       await txn.update('private_batches',{'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'note':note.trim()},where:'id=?',whereArgs:[id]);
