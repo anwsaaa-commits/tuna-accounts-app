@@ -54,6 +54,14 @@ double unallocatedSaleKg(num totalSold,num allocated,num migrationWarning) {
 }
 
 
+bool saleFinancialValuesAllowed(num total, num paid, String kind, bool hasCustomer) {
+  if (!total.isFinite || !paid.isFinite || total <= 0 || paid < 0 || paid > total) return false;
+  if (kind != 'نقدي' && kind != 'آجل') return false;
+  if (kind == 'نقدي' && paid != total) return false;
+  if (kind == 'آجل' && !hasCustomer) return false;
+  return true;
+}
+
 bool collectionAmountAllowed(num outstanding, num amount) {
   if (!outstanding.isFinite || !amount.isFinite || outstanding < 0 || amount <= 0) return false;
   return amount <= outstanding;
@@ -271,8 +279,12 @@ class DB {
     final db = await database;
     final total = (kg * price).round();
     if (total <= 0) throw Exception('قيمة الفاتورة غير صحيحة');
-    if (paid > total) throw Exception('المدفوع لا يتجاوز الإجمالي');
-    if (type == 'نقدي' && paid != total) throw Exception('البيع النقدي يجب أن يكون مدفوعاً بالكامل');
+    if (!saleFinancialValuesAllowed(total,paid,type,customerId!=null)) {
+      if (paid > total) throw Exception('المدفوع لا يتجاوز الإجمالي');
+      if (type == 'نقدي' && paid != total) throw Exception('البيع النقدي يجب أن يكون مدفوعاً بالكامل');
+      if (type == 'آجل' && customerId == null) throw Exception('البيع الآجل يتطلب اختيار عميل لتسجيل الدين في كشف حسابه');
+      throw Exception('قيم الفاتورة أو المدفوع غير صحيحة');
+    }
     // Run stock validation and sale insertion in one transaction to prevent two
     // simultaneous sales from overselling the same remaining inventory.
     return db.transaction((txn) async {
