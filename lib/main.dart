@@ -1545,7 +1545,8 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
         if(!e.hasData)return const Card(child:ListTile(title:Text('إجمالي المصروفات'),subtitle:Text('جارٍ التحميل...')));
         final expenseTotal=e.data!.fold<num>(0,(sum,row)=>sum+(row['amount'] as num));
         return Column(children:[
-          Card(child:ListTile(title:const Text('إجمالي المصروفات الخاصة'),subtitle:Text(money(expenseTotal),style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))),
+          Card(child:ListTile(title:const Text('إجمالي المصروفات العامة القديمة (غير مربوطة بدفعة)'),subtitle:Text(money(expenseTotal),style:const TextStyle(color:gold,fontWeight:FontWeight.bold)))),
+          const Padding(padding:EdgeInsets.only(bottom:6),child:Text('مصاريف الشحنات الجديدة تُسجل داخل الدفعة وتظهر في كشفها المستقل.',style:TextStyle(fontSize:12,color:Colors.orange))),
           FilledButton.tonalIcon(onPressed:addExpense,icon:const Icon(Icons.add),label:const Text('إضافة مصروف')),
           if(e.data!.isNotEmpty)const Align(alignment:Alignment.centerRight,child:Text('سجل المصروفات',style:TextStyle(fontWeight:FontWeight.bold))),
             ...e.data!.map((row) {
