@@ -316,6 +316,12 @@ class DB {
   }
   Future<int> deleteExpense(int id) async =>
       (await database).delete('expenses', where:'id=?', whereArgs:[id]);
+  Future<int> updateBatchExpense(int expenseId,int amount,String note) async {
+    if(amount<=0)throw Exception('أدخل مبلغ مصروف صحيح');
+    if(note.trim().isEmpty)throw Exception('اكتب بيان المصروف');
+    return (await database).update('batch_expenses',{'amount':amount,'note':note.trim()},where:'id=?',whereArgs:[expenseId]);
+  }
+  Future<int> deleteBatchExpense(int expenseId) async => (await database).delete('batch_expenses',where:'id=?',whereArgs:[expenseId]);
   Future<int> addBatchExpense(int batchId,int amount,String note) async {
     if(amount<=0)throw Exception('أدخل مبلغ مصروف صحيح');
     if(note.trim().isEmpty)throw Exception('اكتب بيان المصروف');
@@ -1338,6 +1344,29 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       ));
     }finally{amount.dispose();note.dispose();}
   }
+  Future<void> editBatchExpenseDialog(Map<String,Object?> expense) async {
+    final amount=TextEditingController(text:(expense['amount'] as num).toString());
+    final note=TextEditingController(text:expense['note'] as String? ?? '');
+    try{
+      await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('تعديل مصروف الدفعة'),content:Column(mainAxisSize:MainAxisSize.min,children:[
+        TextField(controller:amount,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'المبلغ (ريال)')),
+        TextField(controller:note,decoration:const InputDecoration(labelText:'بيان المصروف')),
+      ]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{
+        final value=int.tryParse(amount.text.trim());
+        if(value==null||value<=0){showMessage(ctx,'أدخل مبلغًا صحيحًا');return;}
+        if(note.text.trim().isEmpty){showMessage(ctx,'اكتب بيان المصروف');return;}
+        try{await DB.instance.updateBatchExpense(expense['id'] as int,value,note.text);if(ctx.mounted)Navigator.pop(ctx);if(mounted)setState(reloadEntries);}
+        catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}
+      },child:const Text('حفظ'))]);
+    }finally{amount.dispose();note.dispose();}
+  }
+  Future<void> deleteBatchExpenseDialog(Map<String,Object?> expense) async {
+    final confirmed=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حذف مصروف الدفعة'),content:Text('هل تريد حذف «${expense['note']}» بقيمة ${money(expense['amount'] as num)}؟'),actions:[
+      TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),
+      FilledButton(onPressed:()=>Navigator.pop(ctx,true),style:FilledButton.styleFrom(backgroundColor:Colors.red),child:const Text('حذف'))
+    ]));
+    if(confirmed==true){await DB.instance.deleteBatchExpense(expense['id'] as int);if(mounted)setState(reloadEntries);}
+  }
   Future<void> editExpense(Map<String,Object?> row) async {
     final amount=TextEditingController(text:(row['amount'] as num).toString());
     final note=TextEditingController(text:row['note'] as String? ?? '');
@@ -1465,6 +1494,13 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
           Text('حصة المصروفات العامة: ${money(report['expenseShare'] as num)}'),
           Text((report['profitReliable'] as bool? ?? false)?((report['profitFinal'] as bool? ?? false)?'الربح النهائي بعد تصفية الدفعة: ${money(report['profit'] as num)}':'الربح المؤقت للدفعة: ${money(report['profit'] as num)}'):'الربح غير محسوب لوجود خلل في توزيع المخزون',style:TextStyle(color:(report['profitReliable'] as bool? ?? false)?gold:Colors.orange,fontWeight:FontWeight.bold)),
           const SizedBox(height:10),
+          const Text('مصروفات هذه الدفعة',style:TextStyle(fontWeight:FontWeight.bold)),
+          if((report['expenseRows'] as List).isEmpty)const Text('لا توجد مصروفات مسجلة لهذه الدفعة.'),
+          ...((report['expenseRows'] as List<Map<String,Object?>>).map((expense)=>Card(child:ListTile(
+            dense:true,title:Text(money(expense['amount'] as num)),subtitle:Text('${expense['note']} • ${dateLabel(expense['created'] as String)}'),
+            trailing:PopupMenuButton<String>(onSelected:(action){if(action=='edit'){editBatchExpenseDialog(expense);}else if(action=='delete'){deleteBatchExpenseDialog(expense);}},itemBuilder:(_)=>const [PopupMenuItem(value:'edit',child:Text('تعديل')),PopupMenuItem(value:'delete',child:Text('حذف'))]),
+          )))),
+          const SizedBox(height:8),
           const Text('تفصيل المبيعات الموزعة على الشحنة',style:TextStyle(fontWeight:FontWeight.bold)),
           if(allocations.isEmpty)const Text('لم تُوزع مبيعات على هذه الشحنة بعد.'),
           ...allocations.map((s)=>Card(child:ListTile(
