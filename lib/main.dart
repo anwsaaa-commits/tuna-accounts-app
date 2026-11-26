@@ -1119,6 +1119,8 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
     final gross = TextEditingController();
     final price = TextEditingController();
     final net = TextEditingController();
+    final purchaseExpense = TextEditingController(text:'0');
+    final expenseNote = TextEditingController(text:'نقل/عمال/تجهيز');
     final note = TextEditingController();
     final grossFocus = FocusNode();
     final priceFocus = FocusNode();
@@ -1189,6 +1191,17 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
                     ),
                     const SizedBox(height: 12),
                     TextField(
+                      controller: purchaseExpense,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'مصاريف هذه الدفعة (ريال) — تضاف لرأس المال', prefixIcon: Icon(Icons.money_off), border: OutlineInputBorder()),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: expenseNote,
+                      decoration: const InputDecoration(labelText: 'بيان المصروفات (اختياري)', prefixIcon: Icon(Icons.notes), border: OutlineInputBorder()),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
                       controller: note,
                       focusNode: noteFocus,
                       textInputAction: TextInputAction.done,
@@ -1225,6 +1238,8 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
                                   int.parse(price.text.trim()),
                                   double.parse(net.text.trim()),
                                   note.text,
+                                  batchExpense: int.tryParse(purchaseExpense.text.trim().isEmpty?'0':purchaseExpense.text.trim()) ?? -1,
+                                  expenseNote: expenseNote.text,
                                 );
                                 if (ctx.mounted) Navigator.pop(ctx);
                                 if (mounted) setState(reloadEntries);
@@ -1248,6 +1263,8 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       gross.dispose();
       price.dispose();
       net.dispose();
+      purchaseExpense.dispose();
+      expenseNote.dispose();
       note.dispose();
       grossFocus.dispose();
       priceFocus.dispose();
@@ -1337,6 +1354,8 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
           Text('الوزن الإجمالي: ${(batch['gross_kg'] as num).toStringAsFixed(2)} كجم'),
           Text('الوزن الصافي: ${(report['netKg'] as num).toStringAsFixed(2)} كجم'),
           Text('تكلفة الشراء: ${money(report['cost'] as num)}'),
+          Text('مصاريف الدفعة: ${money(report['batchExpenses'] as num)}'),
+          Text('رأس المال الإجمالي للدفعة: ${money(report['capital'] as num)}',style:const TextStyle(fontWeight:FontWeight.bold)),
           Text('تكلفة الكيلو الصافي: ${money(report['unitCost'] as num)}'),
           const Divider(),
           Text('الوزن المباع من هذه الشحنة: ${(report['soldKg'] as num).toStringAsFixed(3)} كجم'),
@@ -1344,7 +1363,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
           Text('إيرادات المبيعات الموزعة: ${money(report['revenue'] as num)}'),
           Text('تكلفة وزن المباع: ${money(report['costOfSold'] as num)}'),
           Text('حصة المصروفات العامة: ${money(report['expenseShare'] as num)}'),
-          Text((report['profitReliable'] as bool? ?? false)?'الربح الصافي التقريبي: ${money(report['profit'] as num)}':'الربح غير محسوب لوجود نقص في توزيع المخزون',style:TextStyle(color:(report['profitReliable'] as bool? ?? false)?gold:Colors.orange,fontWeight:FontWeight.bold)),
+          Text((report['profitReliable'] as bool? ?? false)?((report['profitFinal'] as bool? ?? false)?'الربح النهائي بعد تصفية الدفعة: ${money(report['profit'] as num)}':'الربح المؤقت للدفعة: ${money(report['profit'] as num)}'):'الربح غير محسوب لوجود خلل في توزيع المخزون',style:TextStyle(color:(report['profitReliable'] as bool? ?? false)?gold:Colors.orange,fontWeight:FontWeight.bold)),
           const SizedBox(height:10),
           const Text('تفصيل المبيعات الموزعة على الشحنة',style:TextStyle(fontWeight:FontWeight.bold)),
           if(allocations.isEmpty)const Text('لم تُوزع مبيعات على هذه الشحنة بعد.'),
