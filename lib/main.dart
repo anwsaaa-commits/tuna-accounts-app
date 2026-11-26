@@ -54,6 +54,11 @@ double unallocatedSaleKg(num totalSold,num allocated,num migrationWarning) {
 }
 
 
+bool collectionAmountAllowed(num outstanding, num amount) {
+  if (!outstanding.isFinite || !amount.isFinite || outstanding < 0 || amount <= 0) return false;
+  return amount <= outstanding;
+}
+
 bool saleAllocationMismatch(num saleKg,num allocatedKg,{double tolerance=0.0001}) {
   if (!saleKg.isFinite || !allocatedKg.isFinite || saleKg < 0 || allocatedKg < 0) return true;
   return (saleKg-allocatedKg).abs()>tolerance;
@@ -279,12 +284,16 @@ class DB {
   }
   Future<int> collect(int customerId, int amount, String note) async {
     if (amount <= 0) throw Exception('أدخل مبلغ تحصيل صحيح');
+    if (note.trim().isEmpty) throw Exception('اكتب بيان التحصيل لتسهيل المراجعة');
     final db = await database;
     return db.transaction((txn) async {
+      final customer = await txn.query('customers',where:'id=?',whereArgs:[customerId],limit:1);
+      if (customer.isEmpty) throw Exception('العميل غير موجود؛ لا يمكن تسجيل تحصيل');
       final saleDue = (await txn.rawQuery('SELECT COALESCE(SUM(total-paid),0) AS v FROM sales WHERE customer_id=?',[customerId])).first['v'] as num;
       final collected = (await txn.rawQuery('SELECT COALESCE(SUM(amount),0) AS v FROM collections WHERE customer_id=?',[customerId])).first['v'] as num;
-      if (amount > saleDue - collected) throw Exception('المبلغ أكبر من الرصيد المستحق');
-      return txn.insert('collections', {'customer_id':customerId,'amount':amount,'note':note,'created':DateTime.now().toIso8601String()});
+      final outstanding = saleDue-collected;
+      if (!collectionAmountAllowed(outstanding,amount)) throw Exception('المبلغ أكبر من الرصيد المستحق');
+      return txn.insert('collections', {'customer_id':customerId,'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()});
     });
   }
   Future<Map<String,num>> totals() async {
