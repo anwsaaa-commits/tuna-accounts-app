@@ -38,6 +38,12 @@ double batchNetProfit(num revenue,num soldKg,num unitCost) {
       revenue < 0 || soldKg < 0 || unitCost < 0) return 0;
   return (revenue - (soldKg * unitCost)).toDouble();
 }
+double globalNetProfit(num salesRevenue,num costOfSold,num generalExpenses) {
+  if (!salesRevenue.isFinite || !costOfSold.isFinite || !generalExpenses.isFinite ||
+      salesRevenue < 0 || costOfSold < 0 || generalExpenses < 0) return 0;
+  return (salesRevenue - costOfSold - generalExpenses).toDouble();
+}
+
 double unallocatedSaleKg(num totalSold,num allocated,num migrationWarning) {
   if (!totalSold.isFinite || !allocated.isFinite || !migrationWarning.isFinite ||
       totalSold < 0 || allocated < 0 || migrationWarning < 0) return 0;
@@ -332,7 +338,7 @@ class DB {
     }
     // Legacy global expenses remain outside batch cost until the user assigns them;
     // they are shown in the total expenses but not distributed silently.
-    final netProfit=(salesTotals['total'] as num)-costSold;
+    final netProfit=globalNetProfit(salesTotals['total'] as num,costSold,legacyExpenses);
     final finalProfit=remainingKg<=0.0001;
     return {'sales':salesTotals['total'] as num,'paid':salesTotals['paid'] as num,'weight':soldKg,'collections':collections,'debt':due-collections,'purchaseCost':purchaseCost,'costPerKg':netKg>0?purchaseCost/netKg:0.0,'costOfSold':costSold,'inventoryCost':stockCost,'stockNetKg':netKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':legacyExpenses,'netProfit':unallocatedKg>0.0001||!allocationIntegrityOk?0:netProfit,'unallocatedSoldKg':unallocatedKg,'profitReliable':unallocatedKg<=0.0001&&allocationIntegrityOk?1:0,'profitFinal':finalProfit&&unallocatedKg<=0.0001&&allocationIntegrityOk?1:0,'allocationIntegrityOk':allocationIntegrityOk?1:0};
   }
