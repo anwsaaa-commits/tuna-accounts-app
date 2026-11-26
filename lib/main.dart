@@ -207,6 +207,12 @@ class _TunaAppState extends State<TunaApp> {
 
 class DB {
   DB._();
+  // Prevent accidental duplicate submissions while an identical ledger write is in flight.
+  final Set<String> _pendingWriteKeys = {};
+  Future<int> _guardedWrite(String key, Future<int> Function() operation) async {
+    if (!_pendingWriteKeys.add(key)) throw Exception('العملية قيد الحفظ بالفعل؛ انتظر حتى يكتمل الحفظ.');
+    try { return await operation(); } finally { _pendingWriteKeys.remove(key); }
+  }
   static final DB instance = DB._();
   Database? _database;
   Future<Database> get database async {
@@ -307,7 +313,7 @@ class DB {
     if (amount <= 0) throw Exception('أدخل مبلغ تحصيل صحيح');
     if (note.trim().isEmpty) throw Exception('اكتب بيان التحصيل لتسهيل المراجعة');
     final db = await database;
-    return db.transaction((txn) async {
+    return _guardedWrite('collection:$customerId', () => db.transaction((txn) async {
       final customer = await txn.query('customers',where:'id=?',whereArgs:[customerId],limit:1);
       if (customer.isEmpty) throw Exception('العميل غير موجود؛ لا يمكن تسجيل تحصيل');
       final saleDue = (await txn.rawQuery('SELECT COALESCE(SUM(total-paid),0) AS v FROM sales WHERE customer_id=?',[customerId])).first['v'] as num;
@@ -315,7 +321,7 @@ class DB {
       final outstanding = saleDue-collected;
       if (!collectionAmountAllowed(outstanding,amount)) throw Exception('المبلغ أكبر من الرصيد المستحق');
       return txn.insert('collections', {'customer_id':customerId,'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()});
-    });
+    }));
   }
   Future<Map<String,num>> totals() async {
     final db=await database;
@@ -402,7 +408,7 @@ class DB {
   Future<int> addExpense(int amount, String note) async {
     if (amount <= 0) throw Exception('أدخل مبلغ مصروف صحيح');
     if (note.trim().isEmpty) throw Exception('اكتب بيان المصروف حتى يسهل مراجعته');
-    return (await database).insert('expenses', {'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()});
+    return _guardedWrite('general-expense:add', () => (database).then((db) => db.insert('expenses', {'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()})));
   }
   Future<int> updateExpense(int id, int amount, String note) async {
     if (amount <= 0) throw Exception('أدخل مبلغ مصروف صحيح');
@@ -423,7 +429,7 @@ class DB {
     final db=await database;
     final batch=await db.query('private_batches',where:'id=?',whereArgs:[batchId],limit:1);
     if(batch.isEmpty)throw Exception('دفعة الشراء غير موجودة');
-    return db.insert('batch_expenses',{'batch_id':batchId,'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()});
+    return _guardedWrite('batch-expense:add:$batchId', () => db.insert('batch_expenses',{'batch_id':batchId,'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()}));
   }
   Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note, {int batchExpense=0, String expenseNote='مصاريف شراء'}) async {
     if (!grossKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || !netKg.isFinite || netKg <= 0 || netKg > grossKg || batchExpense < 0) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء والمصروف');
