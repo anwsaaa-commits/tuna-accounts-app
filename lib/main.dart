@@ -604,11 +604,17 @@ Future<void> newCustomer(BuildContext context) async {
 }
 
 Future<void> newSale(BuildContext context) async {
-  final clients=await DB.instance.customers();if(!context.mounted)return;
-  int? customerId; // Cash sales are not assigned to a customer by default.
+  final clients=await DB.instance.customers();
+  final batches=await DB.instance.batchStocks();
+  if(!context.mounted)return;
+  final availableBatches=batches.where((b)=>(b['remaining_kg'] as num)>0.0001).toList();
+  if(availableBatches.isEmpty){showMessage(context,'لا يوجد مخزون متاح في أي دفعة. سجّل عملية شراء أولاً.');return;}
+  int? customerId;
+  int? batchId=availableBatches.first['id'] as int;
   final kgCtrl=TextEditingController(),priceCtrl=TextEditingController(text:await DB.instance.setting('price','6500')),paidCtrl=TextEditingController(),noteCtrl=TextEditingController();
   String type='نقدي';
   await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('بيع تونة'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+    DropdownButtonFormField<int>(initialValue:batchId,decoration:const InputDecoration(labelText:'دفعة الشراء — البيع منها فقط'),items:availableBatches.map((b)=>DropdownMenuItem<int>(value:b['id'] as int,child:Text('شراء رقم ${b['id']} • المتبقي ${(b['remaining_kg'] as num).toStringAsFixed(3)} كجم'))).toList(),onChanged:(v)=>setDialog(()=>batchId=v)),
     DropdownButtonFormField<int>(initialValue:customerId,decoration:const InputDecoration(labelText:'العميل (اختياري — اتركه فارغًا للبيع النقدي)'),items:[const DropdownMenuItem<int>(value:null,child:Text('بيع نقدي بدون تسجيل عميل')), ...clients.map((c)=>DropdownMenuItem<int>(value:c['id'] as int,child:Text(c['name'] as String)))],onChanged:(v)=>setDialog(()=>customerId=v)),
     TextField(controller:kgCtrl,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن بالكيلو')),
     TextField(controller:priceCtrl,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو')),
@@ -616,10 +622,11 @@ Future<void> newSale(BuildContext context) async {
     DropdownButtonFormField<String>(initialValue:type,decoration:const InputDecoration(labelText:'نوع البيع'),items:['نقدي','آجل'].map((x)=>DropdownMenuItem<String>(value:x,child:Text(x))).toList(),onChanged:(v)=>setDialog(()=>type=v??'نقدي')),
     TextField(controller:noteCtrl,decoration:const InputDecoration(labelText:'ملاحظات')),
   ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{
+    if(batchId==null)throw Exception('اختر دفعة شراء');
     final weight=double.parse(kgCtrl.text),price=int.parse(priceCtrl.text),total=(weight*price).round();
     final paid=paidCtrl.text.trim().isEmpty?(type=='نقدي'?total:0):int.parse(paidCtrl.text);
-    await DB.instance.addSale(customerId,weight,price,paid,type,noteCtrl.text);await DB.instance.setSetting('price',price.toString());
-    if(ctx.mounted)Navigator.pop(ctx);if(context.mounted)showMessage(context,'تم حفظ البيع بنجاح');
+    await DB.instance.addSale(customerId,batchId!,weight,price,paid,type,noteCtrl.text);await DB.instance.setSetting('price',price.toString());
+    if(ctx.mounted)Navigator.pop(ctx);if(context.mounted)showMessage(context,'تم حفظ البيع وربطه بالدفعة المحددة');
   }catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ البيع'))])));
 }
 
