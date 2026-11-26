@@ -97,10 +97,32 @@ pw.Widget pdfCell(String value, ShapedFont font, {bool header = false}) =>
       ),
     );
 
-class TunaApp extends StatelessWidget {
+class TunaApp extends StatefulWidget {
   const TunaApp({super.key});
+  @override State<TunaApp> createState() => _TunaAppState();
+}
+class _TunaAppState extends State<TunaApp> {
+  bool isDark = true;
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+  }
+  Future<void> _loadTheme() async {
+    final saved = await DB.instance.setting('theme_mode', 'dark');
+    if (mounted) setState(() => isDark = saved != 'light');
+  }
+  Future<void> _toggleTheme() async {
+    final next = !isDark;
+    setState(() => isDark = next);
+    await DB.instance.setSetting('theme_mode', next ? 'dark' : 'light');
+  }
   @override
   Widget build(BuildContext context) {
+    final brightness = isDark ? Brightness.dark : Brightness.light;
+    final bg = isDark ? dark : const Color(0xFFF5F5F2);
+    final card = isDark ? panel : Colors.white;
+    final foreground = isDark ? Colors.white : const Color(0xFF242424);
     return MaterialApp(
       title: 'تونة بلس',
       debugShowCheckedModeBanner: false,
@@ -113,13 +135,15 @@ class TunaApp extends StatelessWidget {
       ],
       theme: ThemeData(
         useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: dark,
-        colorScheme: ColorScheme.fromSeed(seedColor: gold, brightness: Brightness.dark),
-        appBarTheme: const AppBarTheme(backgroundColor: dark, foregroundColor: gold, centerTitle: true),
-        cardTheme: const CardThemeData(color: panel),
+        brightness: brightness,
+        scaffoldBackgroundColor: bg,
+        colorScheme: ColorScheme.fromSeed(seedColor: gold, brightness: brightness),
+        appBarTheme: AppBarTheme(backgroundColor: bg, foregroundColor: gold, centerTitle: true),
+        cardTheme: CardThemeData(color: card),
+        textTheme: ThemeData(brightness: brightness).textTheme.apply(bodyColor: foreground, displayColor: foreground),
+        navigationBarTheme: NavigationBarThemeData(backgroundColor: card),
       ),
-      home: const AppShell(),
+      home: AppShell(isDark: isDark, onToggleTheme: _toggleTheme),
     );
   }
 }
@@ -365,7 +389,9 @@ class DB {
 void showMessage(BuildContext context, String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(text)));
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  const AppShell({super.key, required this.isDark, required this.onToggleTheme});
+  final bool isDark;
+  final VoidCallback onToggleTheme;
   @override State<AppShell> createState() => _AppShellState();
 }
 class _AppShellState extends State<AppShell> {
@@ -379,17 +405,27 @@ class _AppShellState extends State<AppShell> {
       CustomersPage(key:ValueKey('customers$revision')),
       ReportsPage(key:ValueKey('reports$revision')),
     ];
-    return Scaffold(
-      appBar: AppBar(title:Text(const ['الرئيسية','الفواتير','العملاء','التقارير'][selected]),actions:[
-        IconButton(icon:const Icon(Icons.settings),onPressed:()async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>const SettingsPage()));if(mounted)refreshAll();})
-      ]),
-      body:SafeArea(top:false,child:pages[selected]),
-      bottomNavigationBar:SafeArea(top:false,child:NavigationBar(selectedIndex:selected,onDestinationSelected:(v)=>setState(()=>selected=v),backgroundColor:panel,indicatorColor:gold.withValues(alpha:0.18),destinations:const [
-        NavigationDestination(icon:Icon(Icons.home),label:'الرئيسية'),
-        NavigationDestination(icon:Icon(Icons.receipt_long),label:'فواتير'),
-        NavigationDestination(icon:Icon(Icons.people),label:'عملاء'),
-        NavigationDestination(icon:Icon(Icons.bar_chart),label:'تقارير'),
-      ])),
+    return WillPopScope(
+      onWillPop: () async {
+        if (selected != 0) {
+          setState(() => selected = 0);
+          return false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        appBar: AppBar(title:Text(const ['الرئيسية','الفواتير','العملاء','التقارير'][selected]),actions:[
+          IconButton(tooltip:widget.isDark?'تفعيل الوضع النهاري':'تفعيل الوضع الليلي',icon:Icon(widget.isDark?Icons.light_mode:Icons.dark_mode),onPressed:widget.onToggleTheme),
+          IconButton(icon:const Icon(Icons.settings),onPressed:()async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>const SettingsPage()));if(mounted)refreshAll();})
+        ]),
+        body:SafeArea(top:false,child:pages[selected]),
+        bottomNavigationBar:SafeArea(top:false,child:NavigationBar(selectedIndex:selected,onDestinationSelected:(v)=>setState(()=>selected=v),backgroundColor:widget.isDark?panel:Colors.white,indicatorColor:gold.withValues(alpha:0.18),destinations:const [
+          NavigationDestination(icon:Icon(Icons.home),label:'الرئيسية'),
+          NavigationDestination(icon:Icon(Icons.receipt_long),label:'فواتير'),
+          NavigationDestination(icon:Icon(Icons.people),label:'عملاء'),
+          NavigationDestination(icon:Icon(Icons.bar_chart),label:'تقارير'),
+        ])),
+      ),
     );
   }
 }
