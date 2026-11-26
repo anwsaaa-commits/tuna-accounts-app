@@ -408,6 +408,7 @@ class DB {
       await txn.delete('sales',where:'id=?',whereArgs:[id]);
     });
   }
+}
 void showMessage(BuildContext context, String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(text)));
 
 class AppShell extends StatefulWidget {
