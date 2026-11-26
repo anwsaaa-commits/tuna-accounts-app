@@ -1393,6 +1393,52 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       amount.dispose();note.dispose();
     }
   }
+  Future<void> exportBatchPdf(Map<String,Object?> purchase) async {
+    try{
+      final report=await DB.instance.privateBatchStatement(purchase['id'] as int);
+      final batch=report['batch'] as Map<String,Object?>;
+      final allocations=report['allocations'] as List<Map<String,Object?>>;
+      final font=await loadArabicPdfFont();
+      try{
+        final number=(num? v)=>NumberFormat('#,##0.##','en').format(v??0);
+        final doc=pw.Document();
+        doc.addPage(pw.MultiPage(
+          pageFormat:pdf.PdfPageFormat.a4,
+          margin:const pw.EdgeInsets.all(28),
+          header:(ctx)=>pw.Container(alignment:pw.Alignment.centerRight,child:pdfText('تونة بلس • كشف دفعة شراء',font,fontSize:18,color:pdf.PdfColor.fromHex('#B78B34'))),
+          footer:(ctx)=>pw.Container(alignment:pw.Alignment.center,child:pdfText('صفحة ${ctx.pageNumber} من ${ctx.pagesCount}',font,fontSize:9,align:ShapedTextAlign.center)),
+          build:(ctx)=>[
+            pw.Directionality(textDirection:pw.TextDirection.rtl,child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
+              pdfText('دفعة شراء رقم ${batch['id']}',font,fontSize:15),
+              pdfText('تاريخ الشراء: ${(batch['created'] as String).substring(0,10)}',font),
+              pdfText('الوزن الإجمالي: ${number(batch['gross_kg'])} كجم • الصافي: ${number(report['netKg'])} كجم',font),
+              pdfText('تكلفة الشراء الأساسية: ${number(report['cost'])} ر.ي',font),
+              pdfText('مصاريف الدفعة: ${number(report['batchExpenses'])} ر.ي',font),
+              pdfText('رأس المال: ${number(report['capital'])} ر.ي',font,fontSize:12),
+              pdfText('تكلفة الكيلو الصافي: ${number(report['unitCost'])} ر.ي',font),
+              pdfText('المباع: ${number(report['soldKg'])} كجم • المتبقي: ${number(report['remainingKg'])} كجم',font),
+              pdfText('الإيراد: ${number(report['revenue'])} ر.ي • تكلفة المباع: ${number(report['costOfSold'])} ر.ي',font),
+              pdfText('الربح ${(report['profitFinal'] as bool)?'النهائي':'المؤقت'}: ${number(report['profit'])} ر.ي',font,fontSize:12),
+              pw.SizedBox(height:12),
+              pdfText('تفاصيل المبيعات',font,fontSize:14),
+              pw.Table(border:pw.TableBorder.all(color:pdf.PdfColor.fromHex('#D6C6A5'),width:0.4),children:[
+                pw.TableRow(decoration:pw.BoxDecoration(color:pdf.PdfColor.fromHex('#2C2924')),children:[pdfCell('الفاتورة',font,header:true),pdfCell('التاريخ',font,header:true),pdfCell('الوزن',font,header:true),pdfCell('الإيراد',font,header:true)]),
+                ...allocations.map((sale)=>pw.TableRow(children:[
+                  pdfCell(sale['invoice']?.toString()??'—',font),
+                  pdfCell((sale['created'] as String).substring(0,10),font),
+                  pdfCell(number(sale['kg'])+' كجم',font),
+                  pdfCell(number(sale['revenue'])+' ر.ي',font),
+                ]))
+              ]),
+              if(allocations.isEmpty)pdfText('لا توجد مبيعات مسجلة لهذه الدفعة.',font),
+              if((batch['note'] as String? ?? '').isNotEmpty)pdfText('ملاحظة: ${batch['note']}',font),
+            ]))
+          ],
+        ));
+        await Printing.layoutPdf(onLayout:(_)async=>await doc.save());
+      }finally{font.dispose();}
+    }catch(e){if(mounted)showMessage(context,'تعذر تصدير كشف الدفعة: ${e.toString().replaceFirst('Exception: ','')}');}
+  }
   Future<void> showBatchStatement(Map<String,Object?> purchase) async {
     try {
       final report=await DB.instance.privateBatchStatement(purchase['id'] as int);
@@ -1489,7 +1535,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       }),
       const Divider(),const Text('سجل المشتريات',style:TextStyle(fontWeight:FontWeight.bold)),
       if(rows.isEmpty)const Padding(padding:EdgeInsets.all(18),child:Text('لم تسجل مشتريات بعد',textAlign:TextAlign.center)),
-      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;return Card(child:ListTile(title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • الإجمالي: ${money(tc)}'),isThreeLine:true,trailing:PopupMenuButton<String>(onSelected:(action)async{if(action=='statement'){await showBatchStatement(r);}else if(action=='expense'){await addBatchExpenseDialog(r['id'] as int);}else if(action=='edit'){await editEntry(r);}else if(action=='delete'){try{await DB.instance.deletePrivateBatch(r['id'] as int);if(mounted)setState(reloadEntries);}catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}}},itemBuilder:(_)=>const [PopupMenuItem(value:'statement',child:Text('كشف الشحنة والربح')),PopupMenuItem(value:'expense',child:Text('إضافة مصروف للدفعة')),PopupMenuItem(value:'edit',child:Text('تعديل عملية الشراء')),PopupMenuItem(value:'delete',child:Text('حذف عملية الشراء'))],child:const Icon(Icons.more_vert))));})
+      ...rows.map((r){final g=r['gross_kg'] as num,n=r['net_kg'] as num,pc=r['purchase_price'] as num,tc=r['total_cost'] as num;return Card(child:ListTile(title:Text('${dateLabel(r['created'] as String)}'),subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\nشراء الكيلو: ${money(pc)} • الإجمالي: ${money(tc)}'),isThreeLine:true,trailing:PopupMenuButton<String>(onSelected:(action)async{if(action=='statement'){await showBatchStatement(r);}else if(action=='pdf'){await exportBatchPdf(r);}else if(action=='expense'){await addBatchExpenseDialog(r['id'] as int);}else if(action=='edit'){await editEntry(r);}else if(action=='delete'){try{await DB.instance.deletePrivateBatch(r['id'] as int);if(mounted)setState(reloadEntries);}catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}}},itemBuilder:(_)=>const [PopupMenuItem(value:'statement',child:Text('كشف الشحنة والربح')),PopupMenuItem(value:'pdf',child:Text('تصدير كشف الدفعة PDF')),PopupMenuItem(value:'expense',child:Text('إضافة مصروف للدفعة')),PopupMenuItem(value:'edit',child:Text('تعديل عملية الشراء')),PopupMenuItem(value:'delete',child:Text('حذف عملية الشراء'))],child:const Icon(Icons.more_vert))));})
     ]);
   }));
 }
