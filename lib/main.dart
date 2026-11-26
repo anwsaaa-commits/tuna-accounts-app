@@ -1429,7 +1429,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
       final allocations=report['allocations'] as List<Map<String,Object?>>;
       final font=await loadArabicPdfFont();
       try{
-        final number=(num? v)=>NumberFormat('#,##0.##','en').format(v??0);
+        final number=(Object? value)=>NumberFormat('#,##0.##','en').format(value is num?value:0);
         final doc=pw.Document();
         doc.addPage(pw.MultiPage(
           pageFormat:pdf.PdfPageFormat.a4,
