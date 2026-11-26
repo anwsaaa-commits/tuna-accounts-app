@@ -29,10 +29,15 @@ Future<void> main() async {
   runApp(const TunaApp());
 }
 double batchUnitCost(num purchaseCost,num expenses,num netKg) {
-  if(netKg<=0)return 0;
-  return (purchaseCost+expenses)/netKg;
+  if (!purchaseCost.isFinite || !expenses.isFinite || !netKg.isFinite ||
+      purchaseCost < 0 || expenses < 0 || netKg <= 0) return 0;
+  return (purchaseCost + expenses) / netKg;
 }
-double batchNetProfit(num revenue,num soldKg,num unitCost) => (revenue-(soldKg*unitCost)).toDouble();
+double batchNetProfit(num revenue,num soldKg,num unitCost) {
+  if (!revenue.isFinite || !soldKg.isFinite || !unitCost.isFinite ||
+      revenue < 0 || soldKg < 0 || unitCost < 0) return 0;
+  return (revenue - (soldKg * unitCost)).toDouble();
+}
 
 String money(num value) => '${NumberFormat('#,##0', 'en').format(value)} ر.ي';
 String dateLabel(String value) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime.parse(value));
