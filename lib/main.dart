@@ -154,12 +154,27 @@ class DB {
   Database? _database;
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await openDatabase(p.join(await getDatabasesPath(), 'tuna_plus.db'), version: 5,
+    _database = await openDatabase(p.join(await getDatabasesPath(), 'tuna_plus.db'), version: 6,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) { await db.execute('CREATE TABLE private_batches(id INTEGER PRIMARY KEY AUTOINCREMENT,gross_kg REAL NOT NULL,purchase_price INTEGER NOT NULL,total_cost INTEGER NOT NULL,net_kg REAL NOT NULL,created TEXT NOT NULL,note TEXT)'); }
         if (oldVersion < 3) { await db.execute('CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,amount INTEGER NOT NULL,note TEXT NOT NULL,created TEXT NOT NULL)'); }
         if (oldVersion < 4) { await db.execute('CREATE TABLE reservations(id INTEGER PRIMARY KEY AUTOINCREMENT,customer_name TEXT NOT NULL,phone TEXT,kg REAL NOT NULL,price INTEGER NOT NULL,total INTEGER NOT NULL,deposit INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL,note TEXT,created TEXT NOT NULL)'); }
         if (oldVersion < 5) { await db.execute('CREATE TABLE batch_expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,batch_id INTEGER NOT NULL,amount INTEGER NOT NULL,note TEXT NOT NULL,created TEXT NOT NULL,FOREIGN KEY(batch_id) REFERENCES private_batches(id))'); await db.execute('CREATE TABLE sale_batch_allocations(sale_id INTEGER NOT NULL,batch_id INTEGER NOT NULL,kg REAL NOT NULL,PRIMARY KEY(sale_id,batch_id),FOREIGN KEY(sale_id) REFERENCES sales(id),FOREIGN KEY(batch_id) REFERENCES private_batches(id))'); }
+        if (oldVersion < 6) {
+          final batches = await db.query('private_batches', orderBy: 'created ASC,id ASC');
+          final oldSales = await db.query('sales', orderBy: 'created ASC,id ASC');
+          final remaining = batches.map((b) => (b['net_kg'] as num).toDouble()).toList();
+          for (final sale in oldSales) {
+            var qty = (sale['kg'] as num).toDouble();
+            for (var i=0; i<batches.length && qty>0.000001; i++) {
+              final available = remaining[i] > 0 ? remaining[i] : 0.0;
+              final take = qty < available ? qty : available;
+              if (take <= 0) continue;
+              await db.insert('sale_batch_allocations', {'sale_id':sale['id'],'batch_id':batches[i]['id'],'kg':take});
+              remaining[i] -= take; qty -= take;
+            }
+          }
+        }
       },
       onCreate: (db, version) async {
         await db.execute('CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,phone TEXT,note TEXT)');
@@ -185,7 +200,18 @@ class DB {
     if (name.trim().isEmpty) throw Exception('اسم العميل مطلوب');
     return (await database).insert('customers', {'name':name.trim(),'phone':phone.trim(),'note':note.trim()});
   }
-  Future<int> addSale(int? customerId, double kg, int price, int paid, String type, String note) async {
+  Future<List<Map<String,Object?>>> batchStocks() async {
+    final db=await database;
+    final batches=await db.query('private_batches',orderBy:'created ASC,id ASC');
+    final result=<Map<String,Object?>>[];
+    for(final b in batches){
+      final sold=(await db.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations WHERE batch_id=?',[b['id']])).first['kg'] as num;
+      final net=b['net_kg'] as num;
+      result.add({...b,'sold_kg':sold,'remaining_kg':net-sold});
+    }
+    return result;
+  }
+  Future<int> addSale(int? customerId, int batchId, double kg, int price, int paid, String type, String note) async {
     if (!kg.isFinite || kg <= 0 || price <= 0 || paid < 0) throw Exception('تحقق من الوزن والسعر والمدفوع');
     if (type != 'نقدي' && type != 'آجل') throw Exception('نوع البيع غير صحيح');
     if (type == 'آجل' && customerId == null) throw Exception('البيع الآجل يتطلب اختيار عميل لتسجيل الدين في كشف حسابه');
@@ -197,14 +223,19 @@ class DB {
     // Run stock validation and sale insertion in one transaction to prevent two
     // simultaneous sales from overselling the same remaining inventory.
     return db.transaction((txn) async {
-      final available = (await txn.rawQuery('SELECT COALESCE(SUM(net_kg),0) net FROM private_batches')).first['net'] as num;
-      final sold = (await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sales')).first['kg'] as num;
-      if (available - sold + 0.0001 < kg) throw Exception('الوزن المطلوب يتجاوز المخزون الصافي المتاح (${(available-sold).toStringAsFixed(3)} كجم).');
-      return txn.insert('sales', {
+      final batchRows=await txn.query('private_batches',where:'id=?',whereArgs:[batchId],limit:1);
+      if(batchRows.isEmpty) throw Exception('دفعة الشراء غير موجودة');
+      final net=batchRows.first['net_kg'] as num;
+      final allocated=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations WHERE batch_id=?',[batchId])).first['kg'] as num;
+      final available=net-allocated;
+      if(available+0.0001<kg) throw Exception('الوزن يتجاوز المتبقي في هذه الدفعة (${available.toStringAsFixed(3)} كجم).');
+      final saleId=await txn.insert('sales', {
         'invoice':'TP-${DateTime.now().microsecondsSinceEpoch}','customer_id':customerId,
         'kg':kg,'price':price,'total':total,'paid':paid,'kind':type,'note':note.trim(),
         'created':DateTime.now().toIso8601String()
       });
+      await txn.insert('sale_batch_allocations',{'sale_id':saleId,'batch_id':batchId,'kg':kg});
+      return saleId;
     });
   }
   Future<int> collect(int customerId, int amount, String note) async {
@@ -295,9 +326,14 @@ class DB {
   }
   Future<int> deleteExpense(int id) async =>
       (await database).delete('expenses', where:'id=?', whereArgs:[id]);
-  Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note) async {
+  Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note, {int batchExpense=0, String expenseNote='مصاريف شراء'}) async {
     if (!grossKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || !netKg.isFinite || netKg <= 0 || netKg > grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
-    return (await database).insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':DateTime.now().toIso8601String(),'note':note.trim()});
+    final db=await database;
+    return db.transaction((txn)async{
+      final id=await txn.insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':DateTime.now().toIso8601String(),'note':note.trim()});
+      if(batchExpense>0) await txn.insert('batch_expenses',{'batch_id':id,'amount':batchExpense,'note':expenseNote.trim().isEmpty?'مصاريف شراء':expenseNote.trim(),'created':DateTime.now().toIso8601String()});
+      return id;
+    });
   }
   // FIFO batch statement: calculates allocation of historical sales without modifying saved data.
   Future<Map<String,Object?>> privateBatchStatement(int batchId) async {
