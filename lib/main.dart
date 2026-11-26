@@ -408,7 +408,7 @@ class DB {
       await txn.delete('sales',where:'id=?',whereArgs:[id]);
     });
   }
-xt).showSnackBar(SnackBar(content:Text(text)));
+void showMessage(BuildContext context, String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(text)));
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.isDark, required this.onToggleTheme});
