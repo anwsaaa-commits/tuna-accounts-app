@@ -41,8 +41,9 @@ double batchNetProfit(num revenue,num soldKg,num unitCost) {
 double unallocatedSaleKg(num totalSold,num allocated,num migrationWarning) {
   if (!totalSold.isFinite || !allocated.isFinite || !migrationWarning.isFinite ||
       totalSold < 0 || allocated < 0 || migrationWarning < 0) return 0;
-  final missing=(totalSold-allocated).clamp(0.0,double.infinity);
-  return migrationWarning>missing?migrationWarning.toDouble():missing.toDouble();
+  // Detect both missing allocation and over-allocation; either makes profit unreliable.
+  final discrepancy=(totalSold-allocated).abs();
+  return migrationWarning>discrepancy?migrationWarning.toDouble():discrepancy.toDouble();
 }
 
 String money(num value) => '${NumberFormat('#,##0', 'en').format(value)} ر.ي';
@@ -294,7 +295,7 @@ class DB {
       final capital=baseCost+exp, unit=net>0?capital/net:0.0;
       final sold=saleAllocations.where((a)=>a['batch_id']==id).fold<num>(0,(sum,a)=>sum+(a['kg'] as num)).toDouble();
       final rem=(net-sold).clamp(0.0,net);
-      if(sold>net+0.0001)unallocatedKg+=sold-net;
+      if(sold>net+0.0001)unallocatedKg=unallocatedKg>sold-net?unallocatedKg:sold-net;
       costSold+=sold*unit; stockCost+=rem*unit; remainingKg+=rem;
     }
     // Legacy global expenses remain outside batch cost until the user assigns them;
