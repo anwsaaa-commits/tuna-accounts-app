@@ -250,43 +250,33 @@ class DB {
   }
   Future<Map<String,num>> totals() async {
     final db=await database;
-    final s=(await db.rawQuery('SELECT COALESCE(SUM(total),0) total,COALESCE(SUM(paid),0) paid,COALESCE(SUM(kg),0) weight FROM sales')).first;
-    final c=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) total FROM collections')).first['total'] as num;
+    final salesTotals=(await db.rawQuery('SELECT COALESCE(SUM(total),0) total,COALESCE(SUM(paid),0) paid,COALESCE(SUM(kg),0) weight FROM sales')).first;
+    final collections=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) total FROM collections')).first['total'] as num;
     final due=(await db.rawQuery('SELECT COALESCE(SUM(total-paid),0) total FROM sales')).first['total'] as num;
     final batches=await db.query('private_batches',orderBy:'created ASC,id ASC');
-    final sales=await db.query('sales',orderBy:'created ASC,id ASC');
-    final expenseTotal=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) amount FROM expenses')).first['amount'] as num;
-    final stockNetKg=batches.fold<num>(0,(sum,b)=>sum+(b['net_kg'] as num));
+    final saleAllocations=await db.query('sale_batch_allocations');
+    final batchExpenses=await db.query('batch_expenses');
+    final legacyExpenses=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) amount FROM expenses')).first['amount'] as num;
+    final netKg=batches.fold<num>(0,(sum,b)=>sum+(b['net_kg'] as num));
     final purchaseCost=batches.fold<num>(0,(sum,b)=>sum+(b['total_cost'] as num));
-    final soldKg=s['weight'] as num;
-    var remainingByBatch=batches.map((b)=>(b['net_kg'] as num).toDouble()).toList();
-    var costOfSold=0.0,inventoryCost=0.0,unallocatedSoldKg=0.0;
-    final unitCosts=batches.map((b){
-      final net=(b['net_kg'] as num).toDouble();
-      return net>0?(b['total_cost'] as num).toDouble()/net:0.0;
-    }).toList();
-    for(final sale in sales){
-      var qty=(sale['kg'] as num).toDouble();
-      for(int i=0;i<remainingByBatch.length&&qty>0.000001;i++){
-        final available=remainingByBatch[i]>0?remainingByBatch[i]:0.0;
-        final take=qty<available?qty:available;
-        if(take<=0)continue;
-        costOfSold+=take*unitCosts[i];
-        remainingByBatch[i]-=take;
-        qty-=take;
-      }
-      // Track historic sold weight that cannot be assigned to available stock.
-      if(qty>0.000001)unallocatedSoldKg+=qty;
+    final soldKg=salesTotals['weight'] as num;
+    var costSold=0.0,stockCost=0.0,remainingKg=0.0,expenseTotal=legacyExpenses;
+    var unallocatedKg=0.0;
+    for(final batch in batches){
+      final id=batch['id'] as int, net=(batch['net_kg'] as num).toDouble(),baseCost=(batch['total_cost'] as num).toDouble();
+      final exp=batchExpenses.where((e)=>e['batch_id']==id).fold<num>(0,(sum,e)=>sum+(e['amount'] as num)).toDouble();
+      expenseTotal+=exp;
+      final capital=baseCost+exp, unit=net>0?capital/net:0.0;
+      final sold=saleAllocations.where((a)=>a['batch_id']==id).fold<num>(0,(sum,a)=>sum+(a['kg'] as num)).toDouble();
+      final rem=(net-sold).clamp(0.0,net);
+      if(sold>net+0.0001)unallocatedKg+=sold-net;
+      costSold+=sold*unit; stockCost+=rem*unit; remainingKg+=rem;
     }
-    for(int i=0;i<remainingByBatch.length;i++){
-      inventoryCost+=remainingByBatch[i]>0?remainingByBatch[i]*unitCosts[i]:0;
-    }
-    final remainingKg=remainingByBatch.fold<double>(0,(sum,v)=>sum+(v>0?v:0));
-    final costPerNetKg=stockNetKg>0?purchaseCost/stockNetKg:0.0;
-    final expensesAllocated=stockNetKg>0?expenseTotal*(soldKg/stockNetKg).clamp(0,1):0.0;
-    final netProfit=(s['total'] as num)-costOfSold-expensesAllocated;
-    final finalProfit=stockNetKg>0&&remainingKg<=0.0001;
-    return {'sales':s['total'] as num,'paid':s['paid'] as num,'weight':soldKg,'collections':c,'debt':due-c,'purchaseCost':purchaseCost,'costPerKg':costPerNetKg,'costOfSold':costOfSold,'inventoryCost':inventoryCost,'stockNetKg':stockNetKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':expensesAllocated,'netProfit':unallocatedSoldKg>0.0001?0:netProfit,'unallocatedSoldKg':unallocatedSoldKg,'profitReliable':unallocatedSoldKg<=0.0001?1:0,'profitFinal':finalProfit&&unallocatedSoldKg<=0.0001?1:0};
+    // Legacy global expenses remain outside batch cost until the user assigns them;
+    // they are shown in the total expenses but not distributed silently.
+    final netProfit=(salesTotals['total'] as num)-costSold;
+    final finalProfit=remainingKg<=0.0001;
+    return {'sales':salesTotals['total'] as num,'paid':salesTotals['paid'] as num,'weight':soldKg,'collections':collections,'debt':due-collections,'purchaseCost':purchaseCost,'costPerKg':netKg>0?purchaseCost/netKg:0.0,'costOfSold':costSold,'inventoryCost':stockCost,'stockNetKg':netKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':0,'netProfit':unallocatedKg>0.0001?0:netProfit,'unallocatedSoldKg':unallocatedKg,'profitReliable':unallocatedKg<=0.0001?1:0,'profitFinal':finalProfit&&unallocatedKg<=0.0001?1:0};
   }
   Future<List<Map<String,Object?>>> reservations() async => (await database).query('reservations',orderBy:'created DESC');
   Future<int> addReservation(String name,String phone,double kg,int price,int deposit,String note) async {
@@ -338,47 +328,35 @@ class DB {
   // FIFO batch statement: calculates allocation of historical sales without modifying saved data.
   Future<Map<String,Object?>> privateBatchStatement(int batchId) async {
     final db=await database;
-    final batches=await db.query('private_batches',orderBy:'created ASC,id ASC');
-    final sales=await db.query('sales',orderBy:'created ASC,id ASC');
-    final expenseRows=await db.query('expenses');
-    final batchIndex=batches.indexWhere((b)=>(b['id'] as int)==batchId);
-    if(batchIndex<0) throw Exception('عملية الشراء غير موجودة');
-    final batch=batches[batchIndex];
+    final batchRows=await db.query('private_batches',where:'id=?',whereArgs:[batchId],limit:1);
+    if(batchRows.isEmpty)throw Exception('عملية الشراء غير موجودة');
+    final batch=batchRows.first;
     final netKg=(batch['net_kg'] as num).toDouble();
-    final totalCost=(batch['total_cost'] as num).toDouble();
-    final unitCost=netKg>0?totalCost/netKg:0.0;
-    final remainingByBatch=batches.map((b)=>(b['net_kg'] as num).toDouble()).toList();
-    double soldKg=0,revenue=0,unallocatedSoldKg=0;
+    final baseCost=(batch['total_cost'] as num).toDouble();
+    final expenseRows=await db.query('batch_expenses',where:'batch_id=?',whereArgs:[batchId]);
+    final expenseTotal=expenseRows.fold<num>(0,(sum,e)=>sum+(e['amount'] as num)).toDouble();
+    final capital=baseCost+expenseTotal;
+    final unitCost=netKg>0?capital/netKg:0.0;
+    final allocationRows=await db.query('sale_batch_allocations',where:'batch_id=?',whereArgs:[batchId]);
+    final salesRows=await db.query('sales',orderBy:'created ASC,id ASC');
+    double soldKg=0,revenue=0;
     final allocatedSales=<Map<String,Object?>>[];
-    for(final sale in sales){
-      double saleRemaining=(sale['kg'] as num).toDouble();
+    for(final allocation in allocationRows){
+      final saleId=allocation['sale_id'];
+      final saleRows=salesRows.where((sale)=>sale['id']==saleId);
+      if(saleRows.isEmpty)continue;
+      final sale=saleRows.first;
+      final kg=(allocation['kg'] as num).toDouble();
       final saleKg=(sale['kg'] as num).toDouble();
       final saleTotal=(sale['total'] as num).toDouble();
-      for(int bi=0;bi<remainingByBatch.length && saleRemaining>0.000001;bi++){
-        final available=remainingByBatch[bi]>0?remainingByBatch[bi]:0.0;
-        final take=saleRemaining<available?saleRemaining:available;
-        if(take<=0)continue;
-        if(bi==batchIndex){
-          soldKg+=take;
-          final allocatedRevenue=saleKg>0?saleTotal*(take/saleKg):0.0;
-          revenue+=allocatedRevenue;
-          allocatedSales.add({'invoice':sale['invoice'],'created':sale['created'],'kg':take,'revenue':allocatedRevenue,'unitPrice':sale['price']});
-        }
-        remainingByBatch[bi]-=take;
-        saleRemaining-=take;
-      }
-      if(saleRemaining>0.000001)unallocatedSoldKg+=saleRemaining;
+      final allocatedRevenue=saleKg>0?saleTotal*(kg/saleKg):0.0;
+      soldKg+=kg;revenue+=allocatedRevenue;
+      allocatedSales.add({'invoice':sale['invoice'],'created':sale['created'],'kg':kg,'revenue':allocatedRevenue,'unitPrice':sale['price']});
     }
-    final totalNetStock=batches.fold<num>(0,(sum,b)=>sum+(b['net_kg'] as num));
-    final expenses=expenseRows.fold<num>(0,(sum,e)=>sum+(e['amount'] as num));
-    final expenseShare=totalNetStock>0?expenses*(soldKg/totalNetStock):0.0;
-    final costOfSold=soldKg*unitCost;
     final remainingKg=(netKg-soldKg).clamp(0.0,netKg);
-    final profitReliable=unallocatedSoldKg<=0.0001;
-    // Do not display a profit figure that could be misleading when any historical
-    // sale cannot be allocated to purchase stock.
-    final safeProfit=profitReliable?revenue-costOfSold-expenseShare:0.0;
-    return {'batch':batch,'netKg':netKg,'cost':totalCost,'unitCost':unitCost,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseShare,'profit':safeProfit,'profitReliable':profitReliable,'expenseTotal':expenses,'unallocatedSoldKg':unallocatedSoldKg,'allocations':allocatedSales};
+    final costOfSold=soldKg*unitCost;
+    final profit=revenue-costOfSold;
+    return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':soldKg<=netKg+0.0001,'profitFinal':remainingKg<=0.0001,'expenseTotal':expenseTotal,'unallocatedSoldKg':0.0,'allocations':allocatedSales,'expenseRows':expenseRows};
   }
   Future<void> updatePrivateBatch(int id,double grossKg,int purchasePrice,double netKg,String note) async {
     if(!grossKg.isFinite || grossKg<=0 || purchasePrice<=0 || !netKg.isFinite || netKg<=0 || netKg>grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
@@ -421,11 +399,11 @@ class DB {
         final saleOutstanding=(sale['total'] as num)-(sale['paid'] as num);
         if(collected>remaining-saleOutstanding) throw Exception('لا يمكن حذف الفاتورة؛ توجد تحصيلات لا يمكن ربطها بعد الحذف.');
       }
+      await txn.delete('sale_batch_allocations',where:'sale_id=?',whereArgs:[id]);
       await txn.delete('sales',where:'id=?',whereArgs:[id]);
     });
   }
-}
-void showMessage(BuildContext context, String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(text)));
+xt).showSnackBar(SnackBar(content:Text(text)));
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.isDark, required this.onToggleTheme});
