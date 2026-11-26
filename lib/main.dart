@@ -45,11 +45,12 @@ double globalNetProfit(num salesRevenue,num costOfSold,num generalExpenses) {
 }
 
 double unallocatedSaleKg(num totalSold,num allocated,num migrationWarning) {
-  if (!totalSold.isFinite || !allocated.isFinite || !migrationWarning.isFinite ||
-      totalSold < 0 || allocated < 0 || migrationWarning < 0) return 0;
-  // Detect both missing allocation and over-allocation; either makes profit unreliable.
-  final discrepancy=(totalSold-allocated).abs();
-  return migrationWarning>discrepancy?migrationWarning.toDouble():discrepancy.toDouble();
+  if (!totalSold.isFinite || !allocated.isFinite ||
+      totalSold < 0 || allocated < 0) return 0;
+  // Recalculate from current sales and allocations. The migration warning is
+  // historical and can become stale after invoices are deleted, so it must not
+  // keep profit blocked after the underlying discrepancy has been resolved.
+  return (totalSold-allocated).abs().toDouble();
 }
 
 
