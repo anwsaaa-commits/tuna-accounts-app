@@ -765,7 +765,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
     final gross=rows.fold<num>(0,(a,r)=>a+(r['gross_kg'] as num));
     final net=rows.fold<num>(0,(a,r)=>a+(r['net_kg'] as num));
     final costs=rows.fold<num>(0,(a,r)=>a+(r['total_cost'] as num));
-    final loss=gross-net;final eff=net==0?0:costs/net;
+    final loss=gross-net;
     return ListView(padding:const EdgeInsets.all(12),children:[
       const Text('بيانات سرية لصاحب المتجر فقط',textAlign:TextAlign.center,style:TextStyle(color:gold,fontWeight:FontWeight.bold)),
       GridView.count(shrinkWrap:true,physics:const NeverScrollableScrollPhysics(),crossAxisCount:2,childAspectRatio:1.5,children:[
@@ -805,7 +805,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
             return Card(child:ListTile(
               onTap:()=>showBatchStatement(r),
               title:Text(dateLabel(r['created'] as String)),
-              subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\\nشراء الكيلو: ${money(pc)} • تكلفة الشراء: ${money(tc)}\\nمصروفات مرتبطة: ${money(batchExpenses)} • الإجمالي الحقيقي: ${money(adjustedTotal}'),
+              subtitle:Text('إجمالي: ${g.toStringAsFixed(2)} كجم • صافي: ${n.toStringAsFixed(2)} كجم • فاقد: ${(g-n).toStringAsFixed(2)} كجم\\nشراء الكيلو: ${money(pc)} • تكلفة الشراء: ${money(tc)}\\nمصروفات مرتبطة: ${money(batchExpenses)} • الإجمالي الحقيقي: ${money(adjustedTotal)}'),
               isThreeLine:true,
               trailing:PopupMenuButton<String>(
                 tooltip:'خيارات عملية الشراء',
