@@ -26,9 +26,13 @@ void main() {
       expect(unallocatedSaleKg(10, 12, 0), closeTo(2, 0.00001));
     });
 
-    test('migration warning is not double counted against calculated gap', () {
+    test('stale migration warning does not override the current sales-allocation gap', () {
       expect(unallocatedSaleKg(10, 8, 2), closeTo(2, 0.00001));
-      expect(unallocatedSaleKg(10, 8, 3), closeTo(3, 0.00001));
+      expect(unallocatedSaleKg(10, 8, 3), closeTo(2, 0.00001));
+      // After deleting an unallocated legacy sale, the current gap is zero.
+      expect(unallocatedSaleKg(0, 0, 3), closeTo(0, 0.00001));
+      // If part of the gap is resolved, only the remaining gap blocks profit.
+      expect(unallocatedSaleKg(5, 4, 3), closeTo(1, 0.00001));
     });
 
     test('allocation-discrepancy helper rejects invalid values', () {
