@@ -154,11 +154,14 @@ class DB {
   Database? _database;
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await openDatabase(p.join(await getDatabasesPath(), 'tuna_plus.db'), version: 4,
+    _database = await openDatabase(p.join(await getDatabasesPath(), 'tuna_plus.db'), version: 5,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) { await db.execute('CREATE TABLE private_batches(id INTEGER PRIMARY KEY AUTOINCREMENT,gross_kg REAL NOT NULL,purchase_price INTEGER NOT NULL,total_cost INTEGER NOT NULL,net_kg REAL NOT NULL,created TEXT NOT NULL,note TEXT)'); }
         if (oldVersion < 3) { await db.execute('CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,amount INTEGER NOT NULL,note TEXT NOT NULL,created TEXT NOT NULL)'); }
-        if (oldVersion < 4) { await db.execute('CREATE TABLE reservations(id INTEGER PRIMARY KEY AUTOINCREMENT,customer_name TEXT NOT NULL,phone TEXT,kg REAL NOT NULL,price INTEGER NOT NULL,total INTEGER NOT NULL,deposit INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL,note TEXT,created TEXT NOT NULL)'); }
+        if (oldVersion < 4) { await db.execute('CREATE TABLE reservations(id INTEGER PRIMARY KEY AUTOINCREMENT,customer_name TEXT NOT NULL,phone TEXT,kg REAL NOT NULL,price INTEGER NOT NULL,total INTEGER NOT NULL,deposit INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL,note TEXT,created TEXT NOT NULL)');
+        await db.execute('CREATE TABLE batch_expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,batch_id INTEGER NOT NULL,amount INTEGER NOT NULL,note TEXT NOT NULL,created TEXT NOT NULL,FOREIGN KEY(batch_id) REFERENCES private_batches(id)');
+        await db.execute('CREATE TABLE sale_batch_allocations(sale_id INTEGER NOT NULL,batch_id INTEGER NOT NULL,kg REAL NOT NULL,PRIMARY KEY(sale_id,batch_id),FOREIGN KEY(sale_id) REFERENCES sales(id),FOREIGN KEY(batch_id) REFERENCES private_batches(id))'); }
+        if (oldVersion < 5) { await db.execute('CREATE TABLE batch_expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,batch_id INTEGER NOT NULL,amount INTEGER NOT NULL,note TEXT NOT NULL,created TEXT NOT NULL,FOREIGN KEY(batch_id) REFERENCES private_batches(id))'); await db.execute('CREATE TABLE sale_batch_allocations(sale_id INTEGER NOT NULL,batch_id INTEGER NOT NULL,kg REAL NOT NULL,PRIMARY KEY(sale_id,batch_id),FOREIGN KEY(sale_id) REFERENCES sales(id),FOREIGN KEY(batch_id) REFERENCES private_batches(id))'); }
       },
       onCreate: (db, version) async {
         await db.execute('CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,phone TEXT,note TEXT)');
