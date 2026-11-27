@@ -33,6 +33,18 @@ double batchUnitCost(num purchaseCost,num expenses,num netKg) {
       purchaseCost < 0 || expenses < 0 || netKg <= 0) return 0;
   return (purchaseCost + expenses) / netKg;
 }
+// A batch profit may be shown as reliable only when its own financial inputs
+// are valid and stock allocations reconcile globally and within this batch.
+bool batchStatementIntegrityAllowed(num netKg, num purchaseCost, num batchExpenses,
+    num soldKg, num revenue, num unallocatedKg, bool allocationsOk,
+    {double tolerance=0.0001}) {
+  if (!netKg.isFinite || !purchaseCost.isFinite || !batchExpenses.isFinite ||
+      !soldKg.isFinite || !revenue.isFinite || !unallocatedKg.isFinite ||
+      netKg <= 0 || purchaseCost < 0 || batchExpenses < 0 || soldKg < 0 ||
+      revenue < 0 || unallocatedKg < 0 || !allocationsOk) return false;
+  return soldKg <= netKg + tolerance && unallocatedKg <= tolerance;
+}
+
 double batchNetProfit(num revenue,num soldKg,num unitCost) {
   if (!revenue.isFinite || !soldKg.isFinite || !unitCost.isFinite ||
       revenue < 0 || soldKg < 0 || unitCost < 0) return 0;
@@ -575,7 +587,7 @@ class DB {
     final allocationReferencesOk=allocationRowsAll.every((a)=>allocationRowValid(a['kg'] as num)&&salesRows.any((sale)=>sale['id']==a['sale_id'])&&allBatchRows.any((b)=>b['id']==a['batch_id']));
     final allocationIntegrityOk=invoiceIntegrity&&batchIntegrity&&allocationReferencesOk;
     final profit=batchNetProfit(revenue,soldKg,unitCost);
-    return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':soldKg<=netKg+0.0001&&unallocatedSalesKg<=0.0001&&allocationIntegrityOk,'profitFinal':remainingKg<=0.0001&&unallocatedSalesKg<=0.0001&&allocationIntegrityOk,'allocationIntegrityOk':allocationIntegrityOk,'expenseTotal':expenseTotal,'unallocatedSoldKg':unallocatedSalesKg,'allocations':allocatedSales,'expenseRows':expenseRows};
+    return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':batchStatementIntegrityAllowed(netKg,baseCost,expenseTotal,soldKg,revenue,unallocatedSalesKg,allocationIntegrityOk),'profitFinal':batchStatementIntegrityAllowed(netKg,baseCost,expenseTotal,soldKg,revenue,unallocatedSalesKg,allocationIntegrityOk)&&remainingKg<=0.0001,'allocationIntegrityOk':allocationIntegrityOk,'expenseTotal':expenseTotal,'unallocatedSoldKg':unallocatedSalesKg,'allocations':allocatedSales,'expenseRows':expenseRows};
   }
   Future<void> updatePrivateBatch(int id,double grossKg,int purchasePrice,double netKg,String note) async {
     if(!grossKg.isFinite || grossKg<=0 || purchasePrice<=0 || !netKg.isFinite || netKg<=0 || netKg>grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
