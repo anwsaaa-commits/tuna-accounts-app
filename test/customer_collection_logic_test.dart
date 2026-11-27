@@ -41,6 +41,35 @@ void main() {
     });
   });
 
+  group('customer collection ledger integrity', () {
+    test('valid invoice balances and receipts remain reconciled', () {
+      expect(customerCollectionLedgerIntegrityAllowed([10000, 5000], [3000, 0], [2000, 1000]), isTrue);
+    });
+    test('allows customers with unpaid invoices and no receipts yet', () {
+      expect(customerCollectionLedgerIntegrityAllowed([7000], [0], []), isTrue);
+    });
+    test('rejects receipts exceeding outstanding invoice debt', () {
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [3000], [7001]), isFalse);
+    });
+    test('rejects invalid invoice totals or paid amounts', () {
+      expect(customerCollectionLedgerIntegrityAllowed([0], [0], []), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [-1], []), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [10001], []), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([double.nan], [0], []), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [double.infinity], []), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [], []), isFalse);
+    });
+    test('rejects nonpositive or nonfinite collection rows', () {
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [0], [0]), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [0], [-1]), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [0], [double.nan]), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [0], [double.infinity]), isFalse);
+    });
+    test('rejects collections when old ledger is already over-collected', () {
+      expect(customerCollectionLedgerIntegrityAllowed([5000], [0], [5001]), isFalse);
+    });
+  });
+
   group('customer collection amount validation', () {
     test('accepts collection equal to outstanding balance', () {
       expect(collectionAmountAllowed(5000, 5000), isTrue);
