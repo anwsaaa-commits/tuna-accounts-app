@@ -37,7 +37,7 @@ void main() {
       const total = 50000;
       const kg = 7.0;
       final allocations = [1.333, 2.667, 3.0];
-      final shares = allocations.map((a => allocationRevenueShare(total, kg, a)).toList();
+      final shares = allocations.map((a) => allocationRevenueShare(total, kg, a)).toList();
       expect(saleAllocationsMatchInvoice(kg, allocations), isTrue);
       expect(shares.fold<double>(0, (sum, value) => sum + value), closeTo(total, 0.000001));
     });
