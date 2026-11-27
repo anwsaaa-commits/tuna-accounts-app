@@ -451,7 +451,7 @@ class DB {
     }
     final total = customerSales.fold<num>(0,(sum,row) => sum+(row['total'] as num));
     final paid = customerSales.fold<num>(0,(sum,row) => sum+(row['paid'] as num));
-    final collected = customerCollections.fold<num>(0,(sum,row) => sum+(row['amount'] as num);
+    final collected = customerCollections.fold<num>(0,(sum,row) => sum+(row['amount'] as num));
     return {'sales':total,'paid':paid+collected,'debt':total-paid-collected};
   }
   Future<List<Map<String,Object?>>> salesForCustomer(int id) async => (await database).query('sales', where:'customer_id=?', whereArgs:[id], orderBy:'created DESC');
