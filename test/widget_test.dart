@@ -17,7 +17,6 @@ void main() {
     expect(find.text('إدارة مبيعات التونة بالكيلو'), findsOneWidget);
     expect(find.text('الرئيسية'), findsWidgets);
   });
-}
 
   group('Financial allocation integrity scenarios', () {
     test('one invoice split across two purchase batches preserves full revenue', () {
@@ -62,3 +61,4 @@ void main() {
       expect(globalProfitFinalAllowed(2, 0, 0, true), isTrue);
     });
   });
+}
