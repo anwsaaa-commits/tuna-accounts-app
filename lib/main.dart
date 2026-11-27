@@ -516,10 +516,24 @@ class DB {
   Future<int> updateExpense(int id, int amount, String note) async {
     if (amount <= 0) throw Exception('أدخل مبلغ مصروف صحيح');
     if (note.trim().isEmpty) throw Exception('اكتب بيان المصروف حتى يسهل مراجعته');
-    return (await database).update('expenses', {'amount':amount,'note':note.trim()}, where:'id=?', whereArgs:[id]);
+    return _guardedWrite('general-expense:update:$id', () async {
+      final db = await database;
+      return db.transaction((txn) async {
+        final rows = await txn.query('expenses', where:'id=?', whereArgs:[id], limit:1);
+        if (rows.isEmpty) throw Exception('المصروف غير موجود');
+        return txn.update('expenses', {'amount':amount,'note':note.trim()}, where:'id=?', whereArgs:[id]);
+      });
+    });
   }
   Future<int> deleteExpense(int id) async =>
-      (await database).delete('expenses', where:'id=?', whereArgs:[id]);
+      _guardedWrite('general-expense:delete:$id', () async {
+        final db = await database;
+        return db.transaction((txn) async {
+          final rows = await txn.query('expenses', where:'id=?', whereArgs:[id], limit:1);
+          if (rows.isEmpty) throw Exception('المصروف غير موجود');
+          return txn.delete('expenses', where:'id=?', whereArgs:[id]);
+        });
+      });
   Future<int> updateBatchExpense(int expenseId,int amount,String note) async {
     if(amount<=0)throw Exception('أدخل مبلغ مصروف صحيح');
     if(note.trim().isEmpty)throw Exception('اكتب بيان المصروف');
