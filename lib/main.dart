@@ -69,6 +69,8 @@ bool batchStatementIntegrityAllowed(num netKg, num purchaseCost, num batchExpens
       !soldKg.isFinite || !revenue.isFinite || !unallocatedKg.isFinite ||
       netKg <= 0 || purchaseCost < 0 || batchExpenses < 0 || soldKg < 0 ||
       revenue < 0 || unallocatedKg < 0 || !allocationsOk) return false;
+  if (soldKg <= tolerance && revenue > tolerance) return false;
+  if (soldKg > tolerance && revenue <= tolerance) return false;
   return soldKg <= netKg + tolerance && unallocatedKg <= tolerance;
 }
 
