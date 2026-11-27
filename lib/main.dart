@@ -496,6 +496,18 @@ class DB {
   }
   Future<void> updateReservationStatus(int id,String status) async => (await database).update('reservations',{'status':status},where:'id=?',whereArgs:[id]);
   Future<void> deleteReservation(int id) async => (await database).delete('reservations',where:'id=?',whereArgs:[id]);
+  Future<void> deleteCollection(int customerId, int collectionId) async {
+    return _guardedWrite('collection-delete:$collectionId', () async {
+      final db = await database;
+      await db.transaction((txn) async {
+        final rows = await txn.query('collections',where:'id=? AND customer_id=?',whereArgs:[collectionId,customerId],limit:1);
+        if (rows.isEmpty) throw Exception('التحصيل غير موجود في حساب هذا العميل');
+        final amount = rows.first['amount'] as num;
+        if (!amount.isFinite || amount <= 0) throw Exception('بيانات التحصيل غير سليمة؛ لا يمكن حذفه');
+        await txn.delete('collections',where:'id=? AND customer_id=?',whereArgs:[collectionId,customerId]);
+      });
+    });
+  }
   Future<Map<String,num>> customerTotals(int id) async {
     final db = await database;
     // Validate the complete customer ledger before showing a balance; never
@@ -1396,6 +1408,24 @@ class _CustomerLedgerState extends State<CustomerLedger>{
                     children: receiptSnapshot.data!.map((receipt) => ListTile(
                       title: Text(money(receipt['amount'] as num)),
                       subtitle: Text(receipt['note'] as String? ?? ''),
+                      trailing: IconButton(
+                        tooltip: 'حذف التحصيل',
+                        icon: const Icon(Icons.delete_outline,color:Colors.red),
+                        onPressed: () async {
+                          final confirmed = await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+                            title:const Text('تأكيد حذف التحصيل'),
+                            content:Text('سيتم حذف تحصيل ${money(receipt['amount'] as num)} وإعادة المبلغ إلى الدين المستحق. هل تريد المتابعة؟'),
+                            actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),style:FilledButton.styleFrom(backgroundColor:Colors.red),child:const Text('حذف'))],
+                          ));
+                          if(confirmed!=true) return;
+                          try {
+                            await DB.instance.deleteCollection(id,receipt['id'] as int);
+                            if(mounted)setState(load);
+                          } catch(e) {
+                            if(mounted)showMessage(context,e.toString());
+                          }
+                        },
+                      ),
                     )).toList(),
                   );
                 },
