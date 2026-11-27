@@ -992,18 +992,99 @@ class _ReservationsPageState extends State<ReservationsPage> {
       }catch(e){if(dialogContext.mounted&&loadingOpen){Navigator.of(dialogContext,rootNavigator:true).pop();loadingOpen=false;}if(dialogContext.mounted)showMessage(dialogContext,'تعذر فتح جهات الاتصال: $e');}
       finally{pickingContact=false;if(dialogContext.mounted)setDialog((){});}
     }
-    await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('حجز كمية قادمة'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-      SizedBox(width:double.maxFinite,child:OutlinedButton.icon(onPressed:pickingContact?null:()=>chooseReservationContact(ctx,setDialog),icon:pickingContact?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.contacts),label:Text(pickingContact?'جارٍ فتح جهات الاتصال...':'جلب العميل من جهات الاتصال'))),
-      TextField(controller:name,decoration:const InputDecoration(labelText:'اسم العميل')),
-      TextField(controller:phone,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'رقم الهاتف')),
-      TextField(controller:kg,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن المطلوب بالكيلو')),
-      TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو المتفق عليه')),
-      TextField(controller:deposit,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'العربون (اختياري)')),
-      TextField(controller:note,maxLines:2,decoration:const InputDecoration(labelText:'ملاحظات')),
-    ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()async{try{
-      await DB.instance.addReservation(name.text,phone.text,double.parse(kg.text),int.parse(price.text),int.tryParse(deposit.text)??0,note.text);
-      if(ctx.mounted)Navigator.pop(ctx);if(mounted)reload();
-    }catch(e){showMessage(ctx,e.toString().replaceFirst('Exception: ',''));}},child:const Text('حفظ الحجز'))]));
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialog) {
+            return AlertDialog(
+              title: const Text('حجز كمية قادمة'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: double.maxFinite,
+                      child: OutlinedButton.icon(
+                        onPressed: pickingContact
+                            ? null
+                            : () => chooseReservationContact(ctx, setDialog),
+                        icon: pickingContact
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.contacts),
+                        label: Text(
+                          pickingContact
+                              ? 'جارٍ فتح جهات الاتصال...'
+                              : 'جلب العميل من جهات الاتصال',
+                        ),
+                      ),
+                    ),
+                    TextField(
+                      controller: name,
+                      decoration: const InputDecoration(labelText: 'اسم العميل'),
+                    ),
+                    TextField(
+                      controller: phone,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(labelText: 'رقم الهاتف'),
+                    ),
+                    TextField(
+                      controller: kg,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'الوزن المطلوب بالكيلو'),
+                    ),
+                    TextField(
+                      controller: price,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'سعر الكيلو المتفق عليه'),
+                    ),
+                    TextField(
+                      controller: deposit,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'العربون (اختياري)'),
+                    ),
+                    TextField(
+                      controller: note,
+                      maxLines: 2,
+                      decoration: const InputDecoration(labelText: 'ملاحظات'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('إلغاء'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    try {
+                      await DB.instance.addReservation(
+                        name.text,
+                        phone.text,
+                        double.parse(kg.text),
+                        int.parse(price.text),
+                        int.tryParse(deposit.text) ?? 0,
+                        note.text,
+                      );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (mounted) reload();
+                    } catch (e) {
+                      showMessage(ctx, e.toString().replaceFirst('Exception: ', ''));
+                    }
+                  },
+                  child: const Text('حفظ الحجز'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('حجوزات الكمية القادمة')),floatingActionButton:FloatingActionButton.extended(onPressed:add,icon:const Icon(Icons.add),label:const Text('حجز جديد')),body:FutureBuilder<List<Map<String,Object?>>>(future:future,builder:(context,s){
     if(s.hasError)return Center(child:Text('خطأ: ${s.error}'));
