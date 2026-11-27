@@ -70,6 +70,15 @@ void main() {
       expect(globalNetProfit(200000, 120000, 15000), 65000);
     });
 
+    test('global profit cannot be final with no purchase batches', () {
+      expect(globalProfitFinalAllowed(0, 0, 0, true), isFalse);
+    });
+    test('global profit is final only when all inventory and allocations reconcile', () {
+      expect(globalProfitFinalAllowed(2, 0, 0, true), isTrue);
+      expect(globalProfitFinalAllowed(2, 0.5, 0, true), isFalse);
+      expect(globalProfitFinalAllowed(2, 0, 1, true), isFalse);
+      expect(globalProfitFinalAllowed(2, 0, 0, false), isFalse);
+    });
     test('global profit helper rejects invalid values', () {
       expect(globalNetProfit(double.nan, 120000, 15000), 0);
       expect(globalNetProfit(200000, -1, 15000), 0);
