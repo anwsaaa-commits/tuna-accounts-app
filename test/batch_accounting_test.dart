@@ -13,6 +13,30 @@ void main() {
       expect(batchFinancialInputsAllowed(50, 39, 3000, 150000, [0]), isFalse);
     });
 
+    test('multi-batch invoice revenue is proportionally attributed to each allocation', () {
+      const saleTotal=25000, saleKg=5.0;
+      final firstBatchRevenue=allocationRevenueShare(saleTotal,saleKg,2.0);
+      final secondBatchRevenue=allocationRevenueShare(saleTotal,saleKg,3.0);
+      expect(firstBatchRevenue,closeTo(10000,0.0001));
+      expect(secondBatchRevenue,closeTo(15000,0.0001));
+      expect(firstBatchRevenue+secondBatchRevenue,closeTo(saleTotal,0.0001));
+    });
+    test('multi-batch revenue share rejects invalid or excessive allocation weights', () {
+      expect(allocationRevenueShareAllowed(25000,5,2),isTrue);
+      expect(allocationRevenueShareAllowed(25000,5,5.01),isFalse);
+      expect(allocationRevenueShareAllowed(25000,0,2),isFalse);
+      expect(allocationRevenueShareAllowed(double.nan,5,2),isFalse);
+      expect(allocationRevenueShare(25000,5,6),0);
+    });
+    test('sale allocation rows must sum to invoice weight across batches', () {
+      expect(saleAllocationsMatchInvoice(5,[2,3]),isTrue);
+      expect(saleAllocationsMatchInvoice(5,[1.99995,3]),isTrue);
+      expect(saleAllocationsMatchInvoice(5,[2,2.5]),isFalse);
+      expect(saleAllocationsMatchInvoice(5,[5.1]),isFalse);
+      expect(saleAllocationsMatchInvoice(5,[2,double.nan]),isFalse);
+      expect(saleAllocationsMatchInvoice(0,[0]),isFalse);
+    });
+
     test('batch net-kilo cost includes purchase expenses in capital', () {
       // 50 kg × 3,000 YER + 27,000 YER batch expenses, divided by 39 net kg.
       expect(batchUnitCost(150000, 27000, 39), closeTo(4538.461538, 0.0001));
