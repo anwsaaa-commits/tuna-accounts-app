@@ -132,6 +132,16 @@ bool collectionAmountAllowed(num outstanding, num amount) {
   return amount <= outstanding;
 }
 
+bool customerInvoiceEditCollectionCoverageAllowed(num totalOutstanding, num oldInvoiceOutstanding, num collected, num newInvoiceOutstanding, {double tolerance=0.0001}) {
+  if (!totalOutstanding.isFinite || !oldInvoiceOutstanding.isFinite || !collected.isFinite || !newInvoiceOutstanding.isFinite ||
+      totalOutstanding < 0 || oldInvoiceOutstanding < 0 || collected < 0 || newInvoiceOutstanding < 0 ||
+      oldInvoiceOutstanding > totalOutstanding || collected > totalOutstanding + tolerance) return false;
+  // Collections are pooled by customer. Editing an invoice is safe only if the
+  // remaining customer debt still covers every receipt after replacing its old balance.
+  final revisedOutstanding=totalOutstanding-oldInvoiceOutstanding+newInvoiceOutstanding;
+  return revisedOutstanding + tolerance >= collected;
+}
+
 bool invoiceDeletionAllowed(num totalOutstanding, num targetOutstanding, num collected) {
   if (!totalOutstanding.isFinite || !targetOutstanding.isFinite || !collected.isFinite ||
       totalOutstanding < 0 || targetOutstanding < 0 || collected < 0 ||
