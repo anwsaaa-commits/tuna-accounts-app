@@ -108,6 +108,12 @@ void main() {
       expect(batchStatementIntegrityAllowed(10, 20000, 500, 10, 26000, 0, true), isTrue);
       expect(batchStatementIntegrityAllowed(10, 20000, 500, 10, 26000, 0.1, true), isFalse);
       expect(batchStatementIntegrityAllowed(10, 20000, 500, 10, 26000, 0, false), isFalse);
+      // Sold weight and revenue must agree: no revenue without a sale, and
+      // no sold stock without its corresponding allocated revenue.
+      expect(batchStatementIntegrityAllowed(10, 20000, 500, 0, 26000, 0, true), isFalse);
+      expect(batchStatementIntegrityAllowed(10, 20000, 500, 2, 0, 0, true), isFalse);
+      expect(batchStatementIntegrityAllowed(10, 20000, 500, 0, 0, 0, true), isTrue);
+      expect(batchStatementIntegrityAllowed(10, 20000, 500, 11, 26000, 0, true), isFalse);
       expect(globalNetProfit(26000, 20500, 500), 5000);
     });
 
