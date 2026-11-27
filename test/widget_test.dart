@@ -167,4 +167,34 @@ void main() {
     expect(customerInvoiceEditCollectionCoverageAllowed(20000, 8000, 12001, 0), isFalse);
   });
 
+  group('Purchase batch cost and profit edge cases', () {
+    test('purchase inputs require consistent cost and valid expenses', () {
+      expect(batchFinancialInputsAllowed(10.5, 9.25, 4000, 42000, [250, 125]), isTrue);
+      expect(batchFinancialInputsAllowed(10.5, 9.25, 4000, 41999, [250, 125]), isFalse);
+      expect(batchFinancialInputsAllowed(10, 10.0002, 4000, 40000, []), isFalse);
+      expect(batchFinancialInputsAllowed(10, 0, 4000, 40000, []), isFalse);
+      expect(batchFinancialInputsAllowed(10, 8, 4000, 40000, [0]), isFalse);
+      expect(batchFinancialInputsAllowed(10, 8, 4000, 40000, [-1]), isFalse);
+      expect(batchFinancialInputsAllowed(10, 8, 4000, 40000, [double.nan]), isFalse);
+      expect(batchFinancialInputsAllowed(double.infinity, 8, 4000, 40000, []), isFalse);
+    });
+
+    test('unit cost includes all batch expenses and rejects invalid inputs', () {
+      expect(batchUnitCost(42000, 375, 9.25), closeTo(4581.081081, 0.00001));
+      expect(batchUnitCost(42000, 375, 0), 0);
+      expect(batchUnitCost(42000, -1, 9.25), 0);
+      expect(batchUnitCost(double.infinity, 375, 9.25), 0);
+    });
+
+    test('batch profit handles partial and fully sold quantities accurately', () {
+      expect(batchNetProfit(50000, 5, 4000), 30000);
+      expect(batchNetProfit(0, 0, 4000), 0);
+      expect(batchNetProfit(10000, 2.5, 4000), 0);
+      expect(batchNetProfit(10000, 2.5, 5000), -2500);
+      expect(batchNetProfit(10000, -1, 4000), 0);
+      expect(batchNetProfit(10000, 2, double.nan), 0);
+    });
+  });
+
+
 }
