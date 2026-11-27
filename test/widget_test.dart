@@ -79,6 +79,15 @@ void main() {
       expect(invoiceDeletionAllowed(10000, 4000, 7000), isFalse);
     });
 
+    test('invoice edits preserve pooled customer collection coverage', () {
+      expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 5000, 4000), isTrue);
+      expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 5000, 0), isTrue);
+      expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 5000, 1000), isFalse);
+      expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 7000, 0), isFalse);
+      expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 5000, -1), isFalse);
+      expect(customerInvoiceEditCollectionCoverageAllowed(10000, 12000, 5000, 1000), isFalse);
+    });
+
     test('customer ledger rejects invalid receipts and receipts above debt', () {
       expect(customerCollectionLedgerIntegrityAllowed([10000, 5000], [0, 0], [15000]), isTrue);
       expect(customerCollectionLedgerIntegrityAllowed([10000], [2000], [9000]), isFalse);
