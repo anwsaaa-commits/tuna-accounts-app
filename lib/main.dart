@@ -967,7 +967,7 @@ class _ReservationsPageState extends State<ReservationsPage> {
           final filtered=contacts.where((c)=>c.displayName.toLowerCase().contains(q)||c.phones.map((p)=>p.number).join(' ').contains(q)).toList();
           return AlertDialog(title:const Text('اختر جهة اتصال'),content:SizedBox(width:double.maxFinite,height:MediaQuery.of(pickContext).size.height*0.62,child:Column(children:[
             TextField(controller:search,decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'بحث بالاسم أو الهاتف'),onChanged:(_)=>refreshPicker((){})),
-            const SizedBox(height:6),Expanded(child:filtered.isEmpty?const Center(child:Text('لا توجد نتائج')):ListView.builder(itemCount:filtered.length,itemBuilder:(_,i){final c=filtered[i];return ListTile(title:Text(c.displayName.isEmpty?'بدون اسم':c.displayName),subtitle:Text(c.phones.isEmpty?'لا يوجد رقم هاتف':c.phones.first.number),leading:const Icon(Icons.person,color:gold),onTap:()=>Navigator.pop(pickContext,c);})),
+            const SizedBox(height:6),Expanded(child:filtered.isEmpty?const Center(child:Text('لا توجد نتائج')):ListView.builder(itemCount:filtered.length,itemBuilder:(_,i){final c=filtered[i];return ListTile(title:Text(c.displayName.isEmpty?'بدون اسم':c.displayName),subtitle:Text(c.phones.isEmpty?'لا يوجد رقم هاتف':c.phones.first.number),leading:const Icon(Icons.person,color:gold),onTap:()=>Navigator.pop(pickContext,c),)},)),
           ])),actions:[TextButton(onPressed:()=>Navigator.pop(pickContext),child:const Text('إغلاق'))]);
         }));
         search.dispose();
