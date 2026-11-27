@@ -201,7 +201,7 @@ void main() {
   group('Customer ledger reconciliation edge cases', () {
     test('pooled collections must not exceed outstanding across invoices', () {
       expect(customerCollectionLedgerIntegrityAllowed([10000, 5000], [2000, 1000], [3000, 5000]), isTrue);
-      expect(customerCollectionLedgerIntegrityAllowed([10000, 5000], [2000, 1000], [3000, 9000]), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000, 5000], [2000, 1000], [3000, 10000]), isFalse);
       expect(customerCollectionLedgerIntegrityAllowed([10000, 5000], [2000, 6000], [1000]), isFalse);
       expect(customerCollectionLedgerIntegrityAllowed([10000], [1000, 2000], [1000]), isFalse);
       expect(customerCollectionLedgerIntegrityAllowed([10000], [1000], [0]), isFalse);
