@@ -68,6 +68,14 @@ void main() {
       expect(batchFinancialEditAllowed(2, 50, 3000, 40, 50, 3000, 39), isFalse);
       expect(batchFinancialEditAllowed(double.nan, 50, 3000, 40, 50, 3000, 40), isFalse);
     });
+    test('batch expense financial edits lock after allocations while note-only edits remain allowed', () {
+      expect(batchExpenseFinancialEditAllowed(0), isTrue);
+      expect(batchExpenseFinancialEditAllowed(0.00005), isTrue);
+      expect(batchExpenseFinancialEditAllowed(1), isFalse);
+      expect(batchExpenseFinancialEditAllowed(-1), isFalse);
+      expect(batchExpenseFinancialEditAllowed(double.nan), isFalse);
+      expect(batchExpenseFinancialEditAllowed(double.infinity), isFalse);
+    });
     test('allocation rows must be positive finite weights', () {
       expect(allocationRowValid(0), isFalse);
       expect(allocationRowValid(-0.25), isFalse);
