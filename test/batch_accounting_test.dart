@@ -41,6 +41,14 @@ void main() {
       expect(unallocatedSaleKg(5, 6, 0), 1);
     });
 
+    test('invoice deletion requires exact valid allocations to existing batches', () {
+      expect(saleDeletionAllocationIntegrityOk(3, 3, true, true), isTrue);
+      expect(saleDeletionAllocationIntegrityOk(3, 2.5, true, true), isFalse);
+      expect(saleDeletionAllocationIntegrityOk(3, 3, false, true), isFalse);
+      expect(saleDeletionAllocationIntegrityOk(3, 3, true, false), isFalse);
+      expect(saleDeletionAllocationIntegrityOk(0, 0, true, true), isFalse);
+      expect(saleDeletionAllocationIntegrityOk(3, double.nan, true, true), isFalse);
+    });
     test('invoice allocation mismatch in either direction is flagged', () {
       expect(saleAllocationMismatch(4, 3.5), isTrue);
       expect(saleAllocationMismatch(4, 4), isFalse);

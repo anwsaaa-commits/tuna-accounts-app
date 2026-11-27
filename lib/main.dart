@@ -83,6 +83,10 @@ bool invoiceDeletionAllowed(num totalOutstanding, num targetOutstanding, num col
   return collected <= totalOutstanding - targetOutstanding;
 }
 
+bool saleDeletionAllocationIntegrityOk(num saleKg, num allocatedKg, bool rowsValid, bool batchReferencesValid, {double tolerance=0.0001}) {
+  if (!saleKg.isFinite || !allocatedKg.isFinite || saleKg <= 0 || allocatedKg < 0 || !rowsValid || !batchReferencesValid) return false;
+  return (saleKg-allocatedKg).abs() <= tolerance;
+}
 bool saleAllocationMismatch(num saleKg,num allocatedKg,{double tolerance=0.0001}) {
   if (!saleKg.isFinite || !allocatedKg.isFinite || saleKg < 0 || allocatedKg < 0) return true;
   return (saleKg-allocatedKg).abs()>tolerance;
@@ -577,6 +581,15 @@ class DB {
         final collected=(await txn.rawQuery('SELECT COALESCE(SUM(amount),0) v FROM collections WHERE customer_id=?',[cid])).first['v'] as num;
         final saleOutstanding=(sale['total'] as num)-(sale['paid'] as num);
         if(!invoiceDeletionAllowed(remaining,saleOutstanding,collected)) throw Exception('لا يمكن حذف الفاتورة؛ توجد تحصيلات لا يمكن ربطها بعد الحذف.');
+      }
+      final allocationRows=await txn.query('sale_batch_allocations',where:'sale_id=?',whereArgs:[id]);
+      final allocatedKg=allocationRows.fold<num>(0,(sum,row)=>sum+(row['kg'] as num));
+      final validRows=allocationRows.every((row)=>allocationRowValid(row['kg'] as num));
+      final batchIds=allocationRows.map((row)=>row['batch_id'] as int).toSet();
+      final existingBatches=await txn.query('private_batches',where:'id IN (${batchIds.isEmpty ? -1 : batchIds.join(',')})');
+      final validBatchReferences=existingBatches.length==batchIds.length;
+      if(!saleDeletionAllocationIntegrityOk(sale['kg'] as num,allocatedKg,validRows,validBatchReferences)) {
+        throw Exception('لا يمكن حذف الفاتورة بسبب خلل في توزيع وزنها على دفعات المخزون؛ أصلح التوزيع أولاً حتى لا يتضرر المخزون.');
       }
       await txn.delete('sale_batch_allocations',where:'sale_id=?',whereArgs:[id]);
       await txn.delete('sales',where:'id=?',whereArgs:[id]);
