@@ -497,7 +497,9 @@ class DB {
   Future<void> updateReservationStatus(int id,String status) async => (await database).update('reservations',{'status':status},where:'id=?',whereArgs:[id]);
   Future<void> deleteReservation(int id) async => (await database).delete('reservations',where:'id=?',whereArgs:[id]);
   Future<void> deleteCollection(int customerId, int collectionId) async {
-    return _guardedWrite('collection-delete:$collectionId', () async {
+    final key='collection-delete:$collectionId';
+    if (!_pendingWriteKeys.add(key)) throw Exception('عملية حذف التحصيل قيد التنفيذ بالفعل؛ انتظر حتى تكتمل.');
+    try {
       final db = await database;
       await db.transaction((txn) async {
         final rows = await txn.query('collections',where:'id=? AND customer_id=?',whereArgs:[collectionId,customerId],limit:1);
@@ -506,7 +508,9 @@ class DB {
         if (!amount.isFinite || amount <= 0) throw Exception('بيانات التحصيل غير سليمة؛ لا يمكن حذفه');
         await txn.delete('collections',where:'id=? AND customer_id=?',whereArgs:[collectionId,customerId]);
       });
-    });
+    } finally {
+      _pendingWriteKeys.remove(key);
+    }
   }
   Future<Map<String,num>> customerTotals(int id) async {
     final db = await database;
