@@ -985,12 +985,6 @@ class _ReservationsPageState extends State<ReservationsPage> {
                     ),
             ),
           ])),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(pickContext),
-                child: const Text('إغلاق'),
-              ),
-            ],
           );
         }));
         search.dispose();
