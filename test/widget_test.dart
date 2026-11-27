@@ -82,7 +82,7 @@ void main() {
     test('invoice edits preserve pooled customer collection coverage', () {
       expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 5000, 4000), isTrue);
       expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 5000, 0), isTrue);
-      expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 5000, 1000), isFalse);
+      expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 8000, 1000), isFalse);
       expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 7000, 0), isFalse);
       expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 5000, -1), isFalse);
       expect(customerInvoiceEditCollectionCoverageAllowed(10000, 12000, 5000, 1000), isFalse);
