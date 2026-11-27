@@ -939,7 +939,39 @@ class _ReservationsPageState extends State<ReservationsPage> {
   }
   Future<void> add() async {
     final name=TextEditingController(),phone=TextEditingController(),kg=TextEditingController(),price=TextEditingController(text:'6500'),deposit=TextEditingController(text:'0'),note=TextEditingController();
-    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حجز كمية قادمة'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+    bool pickingContact=false;
+    Future<void> chooseReservationContact(BuildContext dialogContext,StateSetter setDialog) async {
+      if(pickingContact)return;
+      pickingContact=true;
+      bool loadingOpen=false;
+      try {
+        var permission=await permissions.Permission.contacts.status;
+        final granted=permission.isGranted?true:await FlutterContacts.requestPermission(readonly:true);
+        if(!permission.isGranted&&granted)permission=await permissions.Permission.contacts.status;
+        if(!granted||!permission.isGranted){if(dialogContext.mounted)showMessage(dialogContext,'لم يتم منح إذن جهات الاتصال. يمكنك إدخال الاسم والرقم يدويًا.');return;}
+        if(!dialogContext.mounted)return;
+        loadingOpen=true;
+        showDialog<void>(context:dialogContext,barrierDismissible:false,builder:(_)=>const AlertDialog(content:Row(mainAxisSize:MainAxisSize.min,children:[CircularProgressIndicator(),SizedBox(width:16),Flexible(child:Text('جارٍ تحميل جهات الاتصال...'))])));
+        final contacts=_contactCache??await FlutterContacts.getContacts(withProperties:true);
+        if(dialogContext.mounted&&loadingOpen){Navigator.of(dialogContext,rootNavigator:true).pop();loadingOpen=false;}
+        if(!dialogContext.mounted)return;
+        if(_contactCache==null){contacts.sort((a,b)=>a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));_contactCache=contacts;}
+        final search=TextEditingController();
+        final selected=await showDialog<Contact>(context:dialogContext,builder:(pickContext)=>StatefulBuilder(builder:(pickContext,refreshPicker){
+          final q=search.text.trim().toLowerCase();
+          final filtered=contacts.where((c)=>c.displayName.toLowerCase().contains(q)||c.phones.map((p)=>p.number).join(' ').contains(q)).toList();
+          return AlertDialog(title:const Text('اختر جهة اتصال'),content:SizedBox(width:double.maxFinite,height:MediaQuery.of(pickContext).size.height*0.62,child:Column(children:[
+            TextField(controller:search,decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'بحث بالاسم أو الهاتف'),onChanged:(_)=>refreshPicker((){})),
+            const SizedBox(height:6),Expanded(child:filtered.isEmpty?const Center(child:Text('لا توجد نتائج')):ListView.builder(itemCount:filtered.length,itemBuilder:(_,i){final c=filtered[i];return ListTile(title:Text(c.displayName.isEmpty?'بدون اسم':c.displayName),subtitle:Text(c.phones.isEmpty?'لا يوجد رقم هاتف':c.phones.first.number),leading:const Icon(Icons.person,color:gold),onTap:()=>Navigator.pop(pickContext,c);})),
+          ])),actions:[TextButton(onPressed:()=>Navigator.pop(pickContext),child:const Text('إغلاق'))]);
+        }));
+        search.dispose();
+        if(selected!=null){setDialog(()=>name.text=selected.displayName);if(selected.phones.isNotEmpty)setDialog(()=>phone.text=selected.phones.first.number);}
+      }catch(e){if(dialogContext.mounted&&loadingOpen){Navigator.of(dialogContext,rootNavigator:true).pop();loadingOpen=false;}if(dialogContext.mounted)showMessage(dialogContext,'تعذر فتح جهات الاتصال: $e');}
+      finally{pickingContact=false;if(dialogContext.mounted)setDialog((){});}
+    }
+    await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,setDialog)=>AlertDialog(title:const Text('حجز كمية قادمة'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+      SizedBox(width:double.maxFinite,child:OutlinedButton.icon(onPressed:pickingContact?null:()=>chooseReservationContact(ctx,setDialog),icon:pickingContact?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.contacts),label:Text(pickingContact?'جارٍ فتح جهات الاتصال...':'جلب العميل من جهات الاتصال'))),
       TextField(controller:name,decoration:const InputDecoration(labelText:'اسم العميل')),
       TextField(controller:phone,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'رقم الهاتف')),
       TextField(controller:kg,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن المطلوب بالكيلو')),
