@@ -516,7 +516,7 @@ class DB {
   Future<int> updateExpense(int id, int amount, String note) async {
     if (amount <= 0) throw Exception('أدخل مبلغ مصروف صحيح');
     if (note.trim().isEmpty) throw Exception('اكتب بيان المصروف حتى يسهل مراجعته');
-    return _guardedWrite('general-expense:update:$id', () async {
+    return _guardedWrite('general-expense:$id', () async {
       final db = await database;
       return db.transaction((txn) async {
         final rows = await txn.query('expenses', where:'id=?', whereArgs:[id], limit:1);
@@ -526,7 +526,7 @@ class DB {
     });
   }
   Future<int> deleteExpense(int id) async =>
-      _guardedWrite('general-expense:delete:$id', () async {
+      _guardedWrite('general-expense:$id', () async {
         final db = await database;
         return db.transaction((txn) async {
           final rows = await txn.query('expenses', where:'id=?', whereArgs:[id], limit:1);
