@@ -60,6 +60,14 @@ void main() {
       expect(batchAllocationOverage(8, 10), isFalse);
     });
 
+    test('purchase financial values are locked after sales allocations', () {
+      expect(batchFinancialEditAllowed(0, 50, 3000, 40, 48, 3200, 39), isTrue);
+      expect(batchFinancialEditAllowed(2, 50, 3000, 40, 50, 3000, 40), isTrue);
+      expect(batchFinancialEditAllowed(2, 50, 3000, 40, 50, 3500, 40), isFalse);
+      expect(batchFinancialEditAllowed(2, 50, 3000, 40, 49, 3000, 40), isFalse);
+      expect(batchFinancialEditAllowed(2, 50, 3000, 40, 50, 3000, 39), isFalse);
+      expect(batchFinancialEditAllowed(double.nan, 50, 3000, 40, 50, 3000, 40), isFalse);
+    });
     test('allocation rows must be positive finite weights', () {
       expect(allocationRowValid(0), isFalse);
       expect(allocationRowValid(-0.25), isFalse);
