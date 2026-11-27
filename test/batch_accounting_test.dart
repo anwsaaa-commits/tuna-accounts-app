@@ -60,6 +60,14 @@ void main() {
       expect(batchAllocationOverage(8, 10), isFalse);
     });
 
+    test('allocation rows must be positive finite weights', () {
+      expect(allocationRowValid(0), isFalse);
+      expect(allocationRowValid(-0.25), isFalse);
+      expect(allocationRowValid(double.nan), isFalse);
+      expect(allocationRowValid(double.infinity), isFalse);
+      expect(allocationRowValid(0.001), isTrue);
+    });
+
     test('invalid integrity helper inputs are treated as unreliable', () {
       expect(saleAllocationMismatch(double.nan, 0), isTrue);
       expect(batchAllocationOverage(5, double.infinity), isTrue);
