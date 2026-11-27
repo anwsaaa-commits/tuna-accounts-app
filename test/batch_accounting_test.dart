@@ -3,6 +3,16 @@ import 'package:tuna_sales_ledger/main.dart';
 
 void main() {
   group('Tuna Plus batch accounting', () {
+    test('purchase batch and its expense rows must be financially valid', () {
+      expect(batchFinancialInputsAllowed(50, 39, 3000, 150000, [27000]), isTrue);
+      expect(batchFinancialInputsAllowed(50, 51, 3000, 150000, [27000]), isFalse);
+      expect(batchFinancialInputsAllowed(50, 39, 3000, 149999, [27000]), isFalse);
+      expect(batchFinancialInputsAllowed(50, 39, 0, 150000, [27000]), isFalse);
+      expect(batchFinancialInputsAllowed(50, 39, 3000, 150000, [double.nan]), isFalse);
+      expect(batchFinancialInputsAllowed(50, 39, 3000, 150000, [-1]), isFalse);
+      expect(batchFinancialInputsAllowed(50, 39, 3000, 150000, [0]), isFalse);
+    });
+
     test('batch net-kilo cost includes purchase expenses in capital', () {
       // 50 kg × 3,000 YER + 27,000 YER batch expenses, divided by 39 net kg.
       expect(batchUnitCost(150000, 27000, 39), closeTo(4538.461538, 0.0001));
