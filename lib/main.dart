@@ -92,6 +92,11 @@ bool batchAllocationOverage(num allocatedKg,num netKg,{double tolerance=0.0001})
   return allocatedKg>netKg+tolerance;
 }
 bool allocationRowValid(num kg) => kg.isFinite && kg > 0;
+bool batchExpenseFinancialEditAllowed(num allocatedKg,{double tolerance=0.0001}) {
+  if (!allocatedKg.isFinite || allocatedKg < 0) return false;
+  return allocatedKg <= tolerance;
+}
+
 // Protect historical batch cost and yield once sales are attached; notes remain editable.
 bool batchFinancialEditAllowed(num allocatedKg, num oldGross, num oldPrice, num oldNet, num newGross, num newPrice, num newNet, {double tolerance=0.0001}) {
   if (!allocatedKg.isFinite || allocatedKg < 0 || !oldGross.isFinite || !oldPrice.isFinite || !oldNet.isFinite || !newGross.isFinite || !newPrice.isFinite || !newNet.isFinite) return false;
@@ -436,16 +441,40 @@ class DB {
   Future<int> updateBatchExpense(int expenseId,int amount,String note) async {
     if(amount<=0)throw Exception('أدخل مبلغ مصروف صحيح');
     if(note.trim().isEmpty)throw Exception('اكتب بيان المصروف');
-    return (await database).update('batch_expenses',{'amount':amount,'note':note.trim()},where:'id=?',whereArgs:[expenseId]);
+    final db=await database;
+    return db.transaction((txn)async{
+      final rows=await txn.query('batch_expenses',where:'id=?',whereArgs:[expenseId],limit:1);
+      if(rows.isEmpty)throw Exception('المصروف غير موجود');
+      final old=rows.first, batchId=old['batch_id'] as int;
+      final sold=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations WHERE batch_id=?',[batchId])).first['kg'] as num;
+      if(amount!=(old['amount'] as num) && !batchExpenseFinancialEditAllowed(sold)) {
+        throw Exception('لا يمكن تعديل مبلغ مصروف الدفعة بعد تسجيل مبيعات عليها؛ يمكنك تعديل البيان فقط.');
+      }
+      return txn.update('batch_expenses',{'amount':amount,'note':note.trim()},where:'id=?',whereArgs:[expenseId]);
+    });
   }
-  Future<int> deleteBatchExpense(int expenseId) async => (await database).delete('batch_expenses',where:'id=?',whereArgs:[expenseId]);
+  Future<int> deleteBatchExpense(int expenseId) async {
+    final db=await database;
+    return db.transaction((txn)async{
+      final rows=await txn.query('batch_expenses',where:'id=?',whereArgs:[expenseId],limit:1);
+      if(rows.isEmpty)return 0;
+      final batchId=rows.first['batch_id'] as int;
+      final sold=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations WHERE batch_id=?',[batchId])).first['kg'] as num;
+      if(!batchExpenseFinancialEditAllowed(sold))throw Exception('لا يمكن حذف مصروف الدفعة بعد تسجيل مبيعات عليها؛ حتى لا تتغير الأرباح السابقة.');
+      return txn.delete('batch_expenses',where:'id=?',whereArgs:[expenseId]);
+    });
+  }
   Future<int> addBatchExpense(int batchId,int amount,String note) async {
     if(amount<=0)throw Exception('أدخل مبلغ مصروف صحيح');
     if(note.trim().isEmpty)throw Exception('اكتب بيان المصروف');
     final db=await database;
-    final batch=await db.query('private_batches',where:'id=?',whereArgs:[batchId],limit:1);
-    if(batch.isEmpty)throw Exception('دفعة الشراء غير موجودة');
-    return _guardedWrite('batch-expense:add:$batchId', () => db.insert('batch_expenses',{'batch_id':batchId,'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()}));
+    return _guardedWrite('batch-expense:add:$batchId', () => db.transaction((txn)async{
+      final batch=await txn.query('private_batches',where:'id=?',whereArgs:[batchId],limit:1);
+      if(batch.isEmpty)throw Exception('دفعة الشراء غير موجودة');
+      final sold=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations WHERE batch_id=?',[batchId])).first['kg'] as num;
+      if(!batchExpenseFinancialEditAllowed(sold))throw Exception('لا يمكن إضافة مصروف للدفعة بعد تسجيل مبيعات عليها؛ حتى لا تتغير الأرباح السابقة.');
+      return txn.insert('batch_expenses',{'batch_id':batchId,'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()});
+    }));
   }
   Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note, {int batchExpense=0, String expenseNote='مصاريف شراء'}) async {
     if (!grossKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || !netKg.isFinite || netKg <= 0 || netKg > grossKg || batchExpense < 0) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء والمصروف');
