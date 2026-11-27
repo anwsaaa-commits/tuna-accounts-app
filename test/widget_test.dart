@@ -79,6 +79,23 @@ void main() {
       expect(invoiceDeletionAllowed(10000, 4000, 7000), isFalse);
     });
 
+    test('purchase financial values stay protected after sales attach', () {
+      expect(batchFinancialEditAllowed(0, 10, 5000, 8, 12, 6000, 9), isTrue);
+      expect(batchFinancialEditAllowed(2, 10, 5000, 8, 10, 5000, 8), isTrue);
+      expect(batchFinancialEditAllowed(2, 10, 5000, 8, 11, 5000, 8), isFalse);
+      expect(batchFinancialEditAllowed(2, 10, 5000, 8, 10, 5001, 8), isFalse);
+      expect(batchFinancialEditAllowed(2, 10, 5000, 8, 10, 5000, 7.9), isFalse);
+      expect(batchFinancialEditAllowed(double.nan, 10, 5000, 8, 10, 5000, 8), isFalse);
+    });
+
+    test('batch expense amount changes are blocked after allocated sales', () {
+      expect(batchExpenseFinancialEditAllowed(0), isTrue);
+      expect(batchExpenseFinancialEditAllowed(0.00005), isTrue);
+      expect(batchExpenseFinancialEditAllowed(1), isFalse);
+      expect(batchExpenseFinancialEditAllowed(-1), isFalse);
+      expect(batchExpenseFinancialEditAllowed(double.nan), isFalse);
+    });
+
     test('invoice edits preserve pooled customer collection coverage', () {
       expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 5000, 4000), isTrue);
       expect(customerInvoiceEditCollectionCoverageAllowed(10000, 4000, 5000, 0), isTrue);
