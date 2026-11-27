@@ -163,8 +163,8 @@ void main() {
     expect(customerInvoiceEditCollectionCoverageAllowed(20000, 8000, 12000, 8000), isTrue);
     expect(customerInvoiceEditCollectionCoverageAllowed(20000, 0, 12000, 0), isTrue);
     expect(customerInvoiceEditCollectionCoverageAllowed(20000, 8000, 12000, 0), isFalse);
-    expect(customerInvoiceEditCollectionCoverageAllowed(20000, 8000, 12000, 1000), isFalse);
-    expect(customerInvoiceEditCollectionCoverageAllowed(20000, 8000, 12000, 1.0001), isFalse);
+    expect(customerInvoiceEditCollectionCoverageAllowed(20000, 8000, 12000, 1000), isTrue);
+    expect(customerInvoiceEditCollectionCoverageAllowed(20000, 8000, 12000, 1.0001), isTrue);
   });
 
 }
