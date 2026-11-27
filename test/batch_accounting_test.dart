@@ -8,6 +8,16 @@ void main() {
       expect(batchUnitCost(150000, 27000, 39), closeTo(4538.461538, 0.0001));
     });
 
+    test('batch statement profit reliability rejects invalid costs and stock mismatch', () {
+      expect(batchStatementIntegrityAllowed(10, 50000, 1000, 10, 60000, 0, true), isTrue);
+      expect(batchStatementIntegrityAllowed(10, 50000, 1000, 10.2, 60000, 0, true), isFalse);
+      expect(batchStatementIntegrityAllowed(10, 50000, 1000, 5, 30000, 0.2, true), isFalse);
+      expect(batchStatementIntegrityAllowed(10, -1, 1000, 5, 30000, 0, true), isFalse);
+      expect(batchStatementIntegrityAllowed(10, 50000, double.nan, 5, 30000, 0, true), isFalse);
+      expect(batchStatementIntegrityAllowed(0, 50000, 1000, 5, 30000, 0, true), isFalse);
+      expect(batchStatementIntegrityAllowed(10, 50000, 1000, 5, 30000, 0, false), isFalse);
+    });
+
     test('sale profit is calculated from batch unit cost, not average stock cost', () {
       final unitCost = batchUnitCost(150000, 27000, 39);
       expect(batchNetProfit(13000, 2, unitCost), closeTo(3923.076923, 0.001));
