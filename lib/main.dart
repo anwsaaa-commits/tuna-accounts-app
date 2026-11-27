@@ -351,13 +351,14 @@ class DB {
     final migratedGap=double.tryParse(await setting('legacy_unallocated_sales_kg','0'))??0.0;
     final allocatedSalesKg=saleAllocations.fold<num>(0,(sum,a)=>sum+(a['kg'] as num));
     var unallocatedKg=unallocatedSaleKg(soldKg,allocatedSalesKg,migratedGap);
+    var allocationRowsValid=true;
     final allocatedBySale=<int,double>{};
     for(final a in saleAllocations) {
-      if(!allocationRowValid(a['kg'] as num)) allocationIntegrityOk=false;
+      if(!allocationRowValid(a['kg'] as num)) allocationRowsValid=false;
       final sid=a['sale_id'] as int;
       allocatedBySale[sid]=(allocatedBySale[sid]??0.0)+(a['kg'] as num).toDouble();
     }
-    var allocationIntegrityOk=sales.every((sale)=>!saleAllocationMismatch(sale['kg'] as num,allocatedBySale[sale['id'] as int]??0));
+    var allocationIntegrityOk=allocationRowsValid&&sales.every((sale)=>!saleAllocationMismatch(sale['kg'] as num,allocatedBySale[sale['id'] as int]??0));
     final allocatedByBatch=<int,double>{};
     for(final a in saleAllocations) {
       final bid=a['batch_id'] as int;
