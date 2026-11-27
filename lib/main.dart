@@ -293,7 +293,8 @@ class DB {
     }
     // Run stock validation and sale insertion in one transaction to prevent two
     // simultaneous sales from overselling the same remaining inventory.
-    return db.transaction((txn) async {
+    final saleGuardKey='sale:$batchId:$customerId:${kg.toStringAsFixed(6)}:$price:$paid:$type:${note.trim()}';
+    return _guardedWrite(saleGuardKey, () => db.transaction((txn) async {
       final batchRows=await txn.query('private_batches',where:'id=?',whereArgs:[batchId],limit:1);
       if(batchRows.isEmpty) throw Exception('دفعة الشراء غير موجودة');
       final net=batchRows.first['net_kg'] as num;
@@ -307,7 +308,7 @@ class DB {
       });
       await txn.insert('sale_batch_allocations',{'sale_id':saleId,'batch_id':batchId,'kg':kg});
       return saleId;
-    });
+    }));
   }
   Future<int> collect(int customerId, int amount, String note) async {
     if (amount <= 0) throw Exception('أدخل مبلغ تحصيل صحيح');
@@ -434,11 +435,12 @@ class DB {
   Future<int> addPrivateBatch(double grossKg, int purchasePrice, double netKg, String note, {int batchExpense=0, String expenseNote='مصاريف شراء'}) async {
     if (!grossKg.isFinite || grossKg <= 0 || purchasePrice <= 0 || !netKg.isFinite || netKg <= 0 || netKg > grossKg || batchExpense < 0) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء والمصروف');
     final db=await database;
-    return db.transaction((txn)async{
+    final purchaseGuardKey='purchase:${grossKg.toStringAsFixed(6)}:$purchasePrice:${netKg.toStringAsFixed(6)}:${note.trim()}:$batchExpense:$expenseNote';
+    return _guardedWrite(purchaseGuardKey, () => db.transaction((txn)async{
       final id=await txn.insert('private_batches', {'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'created':DateTime.now().toIso8601String(),'note':note.trim()});
       if(batchExpense>0) await txn.insert('batch_expenses',{'batch_id':id,'amount':batchExpense,'note':expenseNote.trim().isEmpty?'مصاريف شراء':expenseNote.trim(),'created':DateTime.now().toIso8601String()});
       return id;
-    });
+    }));
   }
   // FIFO batch statement: calculates allocation of historical sales without modifying saved data.
   Future<Map<String,Object?>> privateBatchStatement(int batchId) async {
