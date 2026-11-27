@@ -18,6 +18,19 @@ void main() {
     expect(find.text('الرئيسية'), findsWidgets);
   });
 
+  group('Invoice edit financial validation scenarios', () {
+    test('editing invoice totals and paid amounts obey cash and credit rules', () {
+      expect(saleFinancialEditAllowed(12000, 12000, 'نقدي', false), isTrue);
+      expect(saleFinancialEditAllowed(12000, 11000, 'نقدي', false), isFalse);
+      expect(saleFinancialEditAllowed(12000, 0, 'آجل', true), isTrue);
+      expect(saleFinancialEditAllowed(12000, 5000, 'آجل', true), isTrue);
+      expect(saleFinancialEditAllowed(12000, 12001, 'آجل', true), isFalse);
+      expect(saleFinancialEditAllowed(12000, 0, 'آجل', false), isFalse);
+      expect(saleFinancialEditAllowed(0, 0, 'نقدي', false), isFalse);
+      expect(saleFinancialEditAllowed(-100, 0, 'آجل', true), isFalse);
+    });
+  });
+
   group('Financial allocation integrity scenarios', () {
     test('one invoice split across two purchase batches preserves full revenue', () {
       const invoiceTotal = 32500;
