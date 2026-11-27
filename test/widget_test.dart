@@ -156,7 +156,7 @@ void main() {
     expect(invoiceDeletionAllowed(100, double.infinity, 0), isFalse);
     expect(invoiceDeletionAllowed(100, -1, 0), isFalse);
     expect(invoiceDeletionAllowed(100, 101, 0), isFalse);
-    expect(invoiceDeletionAllowed(100, 0, -1), isfalse);
+    expect(invoiceDeletionAllowed(100, 0, -1), isFalse);
   });
 
   test('invoice edit pooled coverage protects collected amounts', () {
