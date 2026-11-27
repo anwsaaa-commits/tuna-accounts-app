@@ -28,6 +28,16 @@ Future<void> main() async {
   await DB.instance.database;
   runApp(const TunaApp());
 }
+// Reject corrupted purchase records or expense rows before trusting batch/global profit.
+bool batchFinancialInputsAllowed(num grossKg,num netKg,num purchasePrice,num totalCost,List<num> expenses,{double tolerance=0.0001}) {
+  if (!grossKg.isFinite || !netKg.isFinite || !purchasePrice.isFinite || !totalCost.isFinite ||
+      grossKg <= 0 || netKg <= 0 || netKg > grossKg + tolerance || purchasePrice <= 0 || totalCost < 0) return false;
+  if (totalCost != (grossKg * purchasePrice).round()) return false;
+  for (final expense in expenses) {
+    if (!expense.isFinite || expense <= 0) return false;
+  }
+  return true;
+}
 double batchUnitCost(num purchaseCost,num expenses,num netKg) {
   if (!purchaseCost.isFinite || !expenses.isFinite || !netKg.isFinite ||
       purchaseCost < 0 || expenses < 0 || netKg <= 0) return 0;
@@ -396,6 +406,8 @@ class DB {
     final purchaseCost=batches.fold<num>(0,(sum,b)=>sum+(b['total_cost'] as num));
     final soldKg=salesTotals['weight'] as num;
     var costSold=0.0,stockCost=0.0,remainingKg=0.0,expenseTotal=legacyExpenses;
+    var financialIntegrityOk=true;
+    if(batchExpenses.any((e)=>!batches.any((b)=>b['id']==e['batch_id']))) financialIntegrityOk=false;
     // Reconcile the persisted migration warning against current sales and allocations.
     // Use the larger value to avoid double-counting historical migration gaps.
     final migratedGap=double.tryParse(await setting('legacy_unallocated_sales_kg','0'))??0.0;
@@ -426,7 +438,9 @@ class DB {
     }
     for(final batch in batches){
       final id=batch['id'] as int, net=(batch['net_kg'] as num).toDouble(),baseCost=(batch['total_cost'] as num).toDouble();
-      final exp=batchExpenses.where((e)=>e['batch_id']==id).fold<num>(0,(sum,e)=>sum+(e['amount'] as num)).toDouble();
+      final batchExpenseRows=batchExpenses.where((e)=>e['batch_id']==id).toList();
+      final exp=batchExpenseRows.fold<num>(0,(sum,e)=>sum+(e['amount'] as num)).toDouble();
+      if(!batchFinancialInputsAllowed(batch['gross_kg'] as num,net,batch['purchase_price'] as num,baseCost,batchExpenseRows.map((e)=>e['amount'] as num).toList())) financialIntegrityOk=false;
       expenseTotal+=exp;
       final capital=baseCost+exp, unit=net>0?capital/net:0.0;
       final sold=saleAllocations.where((a)=>a['batch_id']==id).fold<num>(0,(sum,a)=>sum+(a['kg'] as num)).toDouble();
@@ -437,8 +451,9 @@ class DB {
     // Legacy global expenses remain outside batch cost until the user assigns them;
     // they are shown in the total expenses but not distributed silently.
     final netProfit=globalNetProfit(salesTotals['total'] as num,costSold,legacyExpenses);
+    final profitDataReliable=unallocatedKg<=0.0001&&allocationIntegrityOk&&financialIntegrityOk;
     final finalProfit=globalProfitFinalAllowed(batches.length,remainingKg,unallocatedKg,allocationIntegrityOk);
-    return {'sales':salesTotals['total'] as num,'paid':salesTotals['paid'] as num,'weight':soldKg,'collections':collections,'debt':due-collections,'purchaseCost':purchaseCost,'costPerKg':netKg>0?purchaseCost/netKg:0.0,'costOfSold':costSold,'inventoryCost':stockCost,'stockNetKg':netKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':legacyExpenses,'netProfit':unallocatedKg>0.0001||!allocationIntegrityOk?0:netProfit,'unallocatedSoldKg':unallocatedKg,'profitReliable':unallocatedKg<=0.0001&&allocationIntegrityOk?1:0,'profitFinal':finalProfit&&unallocatedKg<=0.0001&&allocationIntegrityOk?1:0,'allocationIntegrityOk':allocationIntegrityOk?1:0};
+    return {'sales':salesTotals['total'] as num,'paid':salesTotals['paid'] as num,'weight':soldKg,'collections':collections,'debt':due-collections,'purchaseCost':purchaseCost,'costPerKg':netKg>0?purchaseCost/netKg:0.0,'costOfSold':costSold,'inventoryCost':stockCost,'stockNetKg':netKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':legacyExpenses,'netProfit':profitDataReliable?netProfit:0,'unallocatedSoldKg':unallocatedKg,'profitReliable':profitDataReliable?1:0,'profitFinal':finalProfit&&profitDataReliable?1:0,'allocationIntegrityOk':allocationIntegrityOk?1:0};
   }
   Future<List<Map<String,Object?>>> reservations() async => (await database).query('reservations',orderBy:'created DESC');
   Future<int> addReservation(String name,String phone,double kg,int price,int deposit,String note) async {
@@ -547,6 +562,7 @@ class DB {
     final expenseRows=await db.query('batch_expenses',where:'batch_id=?',whereArgs:[batchId]);
     final expenseTotal=expenseRows.fold<num>(0,(sum,e)=>sum+(e['amount'] as num)).toDouble();
     final capital=baseCost+expenseTotal;
+    final financialInputsOk=batchFinancialInputsAllowed(batch['gross_kg'] as num,netKg,batch['purchase_price'] as num,baseCost,expenseRows.map((e)=>e['amount'] as num).toList());
     final unitCost=batchUnitCost(baseCost,expenseTotal,netKg);
     final allocationRows=await db.query('sale_batch_allocations',where:'batch_id=?',whereArgs:[batchId]);
     final salesRows=await db.query('sales',orderBy:'created ASC,id ASC');
@@ -587,7 +603,7 @@ class DB {
     final allocationReferencesOk=allocationRowsAll.every((a)=>allocationRowValid(a['kg'] as num)&&salesRows.any((sale)=>sale['id']==a['sale_id'])&&allBatchRows.any((b)=>b['id']==a['batch_id']));
     final allocationIntegrityOk=invoiceIntegrity&&batchIntegrity&&allocationReferencesOk;
     final profit=batchNetProfit(revenue,soldKg,unitCost);
-    return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':batchStatementIntegrityAllowed(netKg,baseCost,expenseTotal,soldKg,revenue,unallocatedSalesKg,allocationIntegrityOk),'profitFinal':batchStatementIntegrityAllowed(netKg,baseCost,expenseTotal,soldKg,revenue,unallocatedSalesKg,allocationIntegrityOk)&&remainingKg<=0.0001,'allocationIntegrityOk':allocationIntegrityOk,'expenseTotal':expenseTotal,'unallocatedSoldKg':unallocatedSalesKg,'allocations':allocatedSales,'expenseRows':expenseRows};
+    return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':financialInputsOk&&batchStatementIntegrityAllowed(netKg,baseCost,expenseTotal,soldKg,revenue,unallocatedSalesKg,allocationIntegrityOk),'profitFinal':batchStatementIntegrityAllowed(netKg,baseCost,expenseTotal,soldKg,revenue,unallocatedSalesKg,allocationIntegrityOk)&&remainingKg<=0.0001,'allocationIntegrityOk':allocationIntegrityOk,'expenseTotal':expenseTotal,'unallocatedSoldKg':unallocatedSalesKg,'allocations':allocatedSales,'expenseRows':expenseRows};
   }
   Future<void> updatePrivateBatch(int id,double grossKg,int purchasePrice,double netKg,String note) async {
     if(!grossKg.isFinite || grossKg<=0 || purchasePrice<=0 || !netKg.isFinite || netKg<=0 || netKg>grossKg) throw Exception('تحقق من الوزن الإجمالي والصافي وسعر الشراء');
