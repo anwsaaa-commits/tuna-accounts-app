@@ -69,6 +69,22 @@ bool saleFinancialValuesAllowed(num total, num paid, String kind, bool hasCustom
   return true;
 }
 
+bool customerCollectionLedgerIntegrityAllowed(List<num> invoiceTotals, List<num> invoicePaid, List<num> collectionAmounts) {
+  if (invoiceTotals.length != invoicePaid.length) return false;
+  var outstanding = 0.0;
+  for (var i = 0; i < invoiceTotals.length; i++) {
+    final total = invoiceTotals[i], paid = invoicePaid[i];
+    if (!total.isFinite || !paid.isFinite || total <= 0 || paid < 0 || paid > total) return false;
+    outstanding += total - paid;
+  }
+  var collected = 0.0;
+  for (final amount in collectionAmounts) {
+    if (!amount.isFinite || amount <= 0) return false;
+    collected += amount;
+  }
+  return outstanding.isFinite && collected.isFinite && collected <= outstanding;
+}
+
 bool collectionAmountAllowed(num outstanding, num amount) {
   if (!outstanding.isFinite || !amount.isFinite || outstanding < 0 || amount <= 0) return false;
   return amount <= outstanding;
@@ -339,8 +355,16 @@ class DB {
     return _guardedWrite('collection:$customerId', () => db.transaction((txn) async {
       final customer = await txn.query('customers',where:'id=?',whereArgs:[customerId],limit:1);
       if (customer.isEmpty) throw Exception('العميل غير موجود؛ لا يمكن تسجيل تحصيل');
-      final saleDue = (await txn.rawQuery('SELECT COALESCE(SUM(total-paid),0) AS v FROM sales WHERE customer_id=?',[customerId])).first['v'] as num;
-      final collected = (await txn.rawQuery('SELECT COALESCE(SUM(amount),0) AS v FROM collections WHERE customer_id=?',[customerId])).first['v'] as num;
+      final customerSales = await txn.query('sales',where:'customer_id=?',whereArgs:[customerId]);
+      final customerCollections = await txn.query('collections',where:'customer_id=?',whereArgs:[customerId]);
+      final invoiceTotals = customerSales.map((row) => row['total'] as num).toList();
+      final invoicePaid = customerSales.map((row) => row['paid'] as num).toList();
+      final collectionAmounts = customerCollections.map((row) => row['amount'] as num).toList();
+      if (!customerCollectionLedgerIntegrityAllowed(invoiceTotals,invoicePaid,collectionAmounts)) {
+        throw Exception('تعذر تسجيل التحصيل؛ توجد بيانات فواتير أو تحصيلات غير سليمة في حساب العميل. راجع السجل أولاً.');
+      }
+      final saleDue = customerSales.fold<num>(0,(sum,row) => sum + ((row['total'] as num) - (row['paid'] as num)));
+      final collected = customerCollections.fold<num>(0,(sum,row) => sum + (row['amount'] as num));
       final outstanding = saleDue-collected;
       if (!collectionAmountAllowed(outstanding,amount)) throw Exception('المبلغ أكبر من الرصيد المستحق');
       return txn.insert('collections', {'customer_id':customerId,'amount':amount,'note':note.trim(),'created':DateTime.now().toIso8601String()});
