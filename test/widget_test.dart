@@ -145,4 +145,26 @@ void main() {
     });
 
   });
+  test('pooled receipt coverage across multiple invoice deletions', () {
+    expect(invoiceDeletionAllowed(15000, 5000, 12000), isFalse);
+    expect(invoiceDeletionAllowed(15000, 3000, 12000), isTrue);
+    expect(invoiceDeletionAllowed(15000, 3000, 12000.0001), isFalse);
+  });
+
+  test('invoice deletion rejects nonfinite and invalid balances', () {
+    expect(invoiceDeletionAllowed(double.nan, 1, 0), isFalse);
+    expect(invoiceDeletionAllowed(100, double.infinity, 0), isFalse);
+    expect(invoiceDeletionAllowed(100, -1, 0), isFalse);
+    expect(invoiceDeletionAllowed(100, 101, 0), isFalse);
+    expect(invoiceDeletionAllowed(100, 0, -1), isfalse);
+  });
+
+  test('invoice edit pooled coverage protects collected amounts', () {
+    expect(customerInvoiceEditCollectionCoverageAllowed(20000, 8000, 12000, 8000), isTrue);
+    expect(customerInvoiceEditCollectionCoverageAllowed(20000, 0, 12000, 0), isTrue);
+    expect(customerInvoiceEditCollectionCoverageAllowed(20000, 8000, 12000, 0), isFalse);
+    expect(customerInvoiceEditCollectionCoverageAllowed(20000, 8000, 12000, 1000), isFalse);
+    expect(customerInvoiceEditCollectionCoverageAllowed(20000, 8000, 12000, 1.0001), isFalse);
+  });
+
 }
