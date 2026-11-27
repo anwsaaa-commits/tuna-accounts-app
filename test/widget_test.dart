@@ -197,4 +197,32 @@ void main() {
   });
 
 
+
+  group('Customer ledger reconciliation edge cases', () {
+    test('pooled collections must not exceed outstanding across invoices', () {
+      expect(customerCollectionLedgerIntegrityAllowed([10000, 5000], [2000, 1000], [3000, 5000]), isTrue);
+      expect(customerCollectionLedgerIntegrityAllowed([10000, 5000], [2000, 1000], [3000, 9000]), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000, 5000], [2000, 6000], [1000]), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [1000, 2000], [1000]), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [1000], [0]), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [1000], [double.infinity]), isFalse);
+    });
+
+    test('collection accepts exact outstanding and rejects excess or invalid amounts', () {
+      expect(collectionAmountAllowed(7000, 7000), isTrue);
+      expect(collectionAmountAllowed(7000, 7001), isFalse);
+      expect(collectionAmountAllowed(0, 1), isFalse);
+      expect(collectionAmountAllowed(7000, -1), isFalse);
+      expect(collectionAmountAllowed(double.nan, 1), isFalse);
+    });
+
+    test('invoice deletion only allowed when remaining debt covers pooled receipts', () {
+      expect(invoiceDeletionAllowed(12000, 3000, 9000), isTrue);
+      expect(invoiceDeletionAllowed(12000, 3000, 9000.01), isFalse);
+      expect(invoiceDeletionAllowed(12000, 12000, 1), isFalse);
+      expect(invoiceDeletionAllowed(12000, -1, 0), isFalse);
+      expect(invoiceDeletionAllowed(double.nan, 3000, 0), isFalse);
+    });
+  });
+
 }
