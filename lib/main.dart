@@ -439,10 +439,20 @@ class DB {
   Future<void> deleteReservation(int id) async => (await database).delete('reservations',where:'id=?',whereArgs:[id]);
   Future<Map<String,num>> customerTotals(int id) async {
     final db = await database;
-    final s = (await db.rawQuery('SELECT COALESCE(SUM(total),0) total,COALESCE(SUM(paid),0) paid FROM sales WHERE customer_id=?',[id])).first;
-    final c = (await db.rawQuery('SELECT COALESCE(SUM(amount),0) total FROM collections WHERE customer_id=?',[id])).first['total'] as num;
-    final total = s['total'] as num, paid = s['paid'] as num;
-    return {'sales':total,'paid':paid+c,'debt':total-paid-c};
+    // Validate the complete customer ledger before showing a balance; never
+    // silently display a negative debt caused by broken/duplicate receipts.
+    final customerSales = await db.query('sales',where:'customer_id=?',whereArgs:[id]);
+    final customerCollections = await db.query('collections',where:'customer_id=?',whereArgs:[id]);
+    final invoiceTotals = customerSales.map((row) => row['total'] as num).toList();
+    final invoicePaid = customerSales.map((row) => row['paid'] as num).toList();
+    final collectionAmounts = customerCollections.map((row) => row['amount'] as num).toList();
+    if (!customerCollectionLedgerIntegrityAllowed(invoiceTotals,invoicePaid,collectionAmounts)) {
+      throw Exception('كشف حساب العميل غير متوازن؛ راجع الفواتير والتحصيلات قبل اعتماد الرصيد.');
+    }
+    final total = customerSales.fold<num>(0,(sum,row) => sum+(row['total'] as num));
+    final paid = customerSales.fold<num>(0,(sum,row) => sum+(row['paid'] as num));
+    final collected = customerCollections.fold<num>(0,(sum,row) => sum+(row['amount'] as num);
+    return {'sales':total,'paid':paid+collected,'debt':total-paid-collected};
   }
   Future<List<Map<String,Object?>>> salesForCustomer(int id) async => (await database).query('sales', where:'customer_id=?', whereArgs:[id], orderBy:'created DESC');
   Future<Map<String,Object?>?> customerById(int? id) async { if (id == null) return null; final rows = await (await database).query('customers', where:'id=?', whereArgs:[id], limit:1); return rows.isEmpty ? null : rows.first; }
