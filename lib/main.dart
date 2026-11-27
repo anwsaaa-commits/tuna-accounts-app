@@ -38,6 +38,23 @@ bool batchFinancialInputsAllowed(num grossKg,num netKg,num purchasePrice,num tot
   }
   return true;
 }
+bool allocationRevenueShareAllowed(num saleTotal,num saleKg,num allocatedKg,{double tolerance=0.0001}) {
+  if (!saleTotal.isFinite || !saleKg.isFinite || !allocatedKg.isFinite || saleTotal <= 0 || saleKg <= 0 || allocatedKg <= 0) return false;
+  return allocatedKg <= saleKg + tolerance;
+}
+double allocationRevenueShare(num saleTotal,num saleKg,num allocatedKg) {
+  if (!allocationRevenueShareAllowed(saleTotal,saleKg,allocatedKg)) return 0;
+  return (saleTotal * (allocatedKg / saleKg)).toDouble();
+}
+bool saleAllocationsMatchInvoice(num saleKg,List<num> allocatedKgs,{double tolerance=0.0001}) {
+  if (!saleKg.isFinite || saleKg <= 0) return false;
+  var total=0.0;
+  for (final kg in allocatedKgs) {
+    if (!kg.isFinite || kg <= 0) return false;
+    total+=kg;
+  }
+  return total.isFinite && (saleKg-total).abs() <= tolerance;}
+
 double batchUnitCost(num purchaseCost,num expenses,num netKg) {
   if (!purchaseCost.isFinite || !expenses.isFinite || !netKg.isFinite ||
       purchaseCost < 0 || expenses < 0 || netKg <= 0) return 0;
