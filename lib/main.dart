@@ -984,7 +984,14 @@ class _ReservationsPageState extends State<ReservationsPage> {
                       },
                     ),
             ),
-          ])),actions:[TextButton(onPressed:()=>Navigator.pop(pickContext),child:const Text('إغلاق'))]);
+          ])),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(pickContext),
+                child: const Text('إغلاق'),
+              ),
+            ],
+          );
         }));
         search.dispose();
         if(selected!=null){setDialog(()=>name.text=selected.displayName);if(selected.phones.isNotEmpty)setDialog(()=>phone.text=selected.phones.first.number);}
