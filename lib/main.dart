@@ -38,6 +38,7 @@ double batchNetProfit(num revenue,num soldKg,num unitCost) {
       revenue < 0 || soldKg < 0 || unitCost < 0) return 0;
   return (revenue - (soldKg * unitCost)).toDouble();
 }
+// Global profit is final only after at least one batch exists and all stock is sold with allocations reconciled.
 bool globalProfitFinalAllowed(num batchCount,num remainingKg,num unallocatedKg,bool integrityOk,{double tolerance=0.0001}) {
   if (!batchCount.isFinite || !remainingKg.isFinite || !unallocatedKg.isFinite ||
       batchCount <= 0 || remainingKg < 0 || unallocatedKg < 0 || !integrityOk) return false;
