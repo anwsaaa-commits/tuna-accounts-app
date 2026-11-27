@@ -60,5 +60,34 @@ void main() {
       expect(globalProfitFinalAllowed(2, 0, 0, false), isFalse);
       expect(globalProfitFinalAllowed(2, 0, 0, true), isTrue);
     });
+    test('invoice deletion preserves pooled customer collection coverage', () {
+      expect(invoiceDeletionAllowed(10000, 4000, 5000), isTrue);
+      expect(invoiceDeletionAllowed(10000, 6000, 5000), isFalse);
+      expect(invoiceDeletionAllowed(10000, 4000, 7000), isFalse);
+    });
+
+    test('customer ledger rejects invalid receipts and receipts above debt', () {
+      expect(customerCollectionLedgerIntegrityAllowed([10000, 5000], [0, 0], [15000]), isTrue);
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [2000], [9000]), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10000], [11000], []), isFalse);
+      expect(collectionAmountAllowed(5000, 5000), isTrue);
+      expect(collectionAmountAllowed(5000, 5001), isFalse);
+      expect(collectionAmountAllowed(5000, 0), isFalse);
+    });
+
+    test('invoice deletion requires complete valid batch allocation references', () {
+      expect(saleDeletionAllocationIntegrityOk(5, 5, true, true), isTrue);
+      expect(saleDeletionAllocationIntegrityOk(5, 4.9, true, true), isFalse);
+      expect(saleDeletionAllocationIntegrityOk(5, 5, false, true), isFalse);
+      expect(saleDeletionAllocationIntegrityOk(5, 5, true, false), isFalse);
+    });
+
+    test('batch profit reliability requires reconciled allocations', () {
+      expect(batchStatementIntegrityAllowed(10, 20000, 500, 10, 26000, 0, true), isTrue);
+      expect(batchStatementIntegrityAllowed(10, 20000, 500, 10, 26000, 0.1, true), isFalse);
+      expect(batchStatementIntegrityAllowed(10, 20000, 500, 10, 26000, 0, false), isFalse);
+      expect(globalNetProfit(26000, 20500, 500), 5000);
+    });
+
   });
 }
