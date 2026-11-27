@@ -114,6 +114,16 @@ void main() {
       expect(collectionAmountAllowed(5000, 0), isFalse);
     });
 
+    test('customer pooled ledger handles empty, fractional and overflow balances safely', () {
+      expect(customerCollectionLedgerIntegrityAllowed([], [], []), isTrue);
+      expect(customerCollectionLedgerIntegrityAllowed([], [], [1]), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([10.5, 20.25], [2.5, 5.25], [23]), isTrue);
+      expect(customerCollectionLedgerIntegrityAllowed([10.5, 20.25], [2.5, 5.25], [23.001]), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([double.maxFinite, double.maxFinite], [0, 0], []), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([100], [0], [double.infinity]), isFalse);
+      expect(customerCollectionLedgerIntegrityAllowed([100], [0], [-0.01]), isFalse);
+    });
+
     test('invoice deletion requires complete valid batch allocation references', () {
       expect(saleDeletionAllocationIntegrityOk(5, 5, true, true), isTrue);
       expect(saleDeletionAllocationIntegrityOk(5, 4.9, true, true), isFalse);
