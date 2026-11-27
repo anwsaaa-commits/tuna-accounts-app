@@ -100,6 +100,9 @@ double unallocatedSaleKg(num totalSold,num allocated,num migrationWarning) {
 }
 
 
+bool saleFinancialEditAllowed(num total, num paid, String kind, bool hasCustomer) =>
+    saleFinancialValuesAllowed(total, paid, kind, hasCustomer);
+
 bool saleFinancialValuesAllowed(num total, num paid, String kind, bool hasCustomer) {
   if (!total.isFinite || !paid.isFinite || total <= 0 || paid < 0 || paid > total) return false;
   if (kind != 'نقدي' && kind != 'آجل') return false;
