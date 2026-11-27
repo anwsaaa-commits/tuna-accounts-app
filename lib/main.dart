@@ -92,6 +92,11 @@ bool batchAllocationOverage(num allocatedKg,num netKg,{double tolerance=0.0001})
   return allocatedKg>netKg+tolerance;
 }
 bool allocationRowValid(num kg) => kg.isFinite && kg > 0;
+// Protect historical batch cost and yield once sales are attached; notes remain editable.
+bool batchFinancialEditAllowed(num allocatedKg, num oldGross, num oldPrice, num oldNet, num newGross, num newPrice, num newNet, {double tolerance=0.0001}) {
+  if (!allocatedKg.isFinite || allocatedKg < 0 || !oldGross.isFinite || !oldPrice.isFinite || !oldNet.isFinite || !newGross.isFinite || !newPrice.isFinite || !newNet.isFinite) return false;
+  if (allocatedKg <= tolerance) return true;
+  return oldGross == newGross && oldPrice == newPrice && oldNet == newNet;}
 
 String money(num value) => '${NumberFormat('#,##0', 'en').format(value)} ر.ي';
 String dateLabel(String value) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime.parse(value));
@@ -512,8 +517,10 @@ class DB {
     await db.transaction((txn) async {
       final oldRows=await txn.query('private_batches',where:'id=?',whereArgs:[id],limit:1);
       if(oldRows.isEmpty) throw Exception('عملية الشراء غير موجودة');
+      final old=oldRows.first;
       final soldForBatch=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations WHERE batch_id=?',[id])).first['kg'] as num;
       if(netKg+0.0001<soldForBatch) throw Exception('لا يمكن تعديل الشراء: الصافي أقل من الوزن المباع من هذه الدفعة.');
+      if(!batchFinancialEditAllowed(soldForBatch,old['gross_kg'] as num,old['purchase_price'] as num,old['net_kg'] as num,grossKg,purchasePrice,netKg)) throw Exception('لا يمكن تعديل الوزن أو سعر الشراء بعد تسجيل مبيعات على الدفعة؛ يمكنك تعديل الملاحظة فقط حتى لا تتغير الأرباح السابقة.');
       await txn.update('private_batches',{'gross_kg':grossKg,'purchase_price':purchasePrice,'total_cost':(grossKg*purchasePrice).round(),'net_kg':netKg,'note':note.trim()},where:'id=?',whereArgs:[id]);
     });
   }
