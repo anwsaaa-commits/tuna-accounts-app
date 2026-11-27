@@ -538,33 +538,38 @@ class DB {
     if(amount<=0)throw Exception('أدخل مبلغ مصروف صحيح');
     if(note.trim().isEmpty)throw Exception('اكتب بيان المصروف');
     final db=await database;
-    return db.transaction((txn)async{
+    final initialRows=await db.query('batch_expenses',where:'id=?',whereArgs:[expenseId],limit:1);
+    if(initialRows.isEmpty)throw Exception('المصروف غير موجود');
+    final batchId=initialRows.first['batch_id'] as int;
+    return _guardedWrite('batch-expense-batch:$batchId', () => db.transaction((txn)async{
       final rows=await txn.query('batch_expenses',where:'id=?',whereArgs:[expenseId],limit:1);
       if(rows.isEmpty)throw Exception('المصروف غير موجود');
-      final old=rows.first, batchId=old['batch_id'] as int;
+      final old=rows.first;
       final sold=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations WHERE batch_id=?',[batchId])).first['kg'] as num;
       if(amount!=(old['amount'] as num) && !batchExpenseFinancialEditAllowed(sold)) {
         throw Exception('لا يمكن تعديل مبلغ مصروف الدفعة بعد تسجيل مبيعات عليها؛ يمكنك تعديل البيان فقط.');
       }
       return txn.update('batch_expenses',{'amount':amount,'note':note.trim()},where:'id=?',whereArgs:[expenseId]);
-    });
+    }));
   }
   Future<int> deleteBatchExpense(int expenseId) async {
     final db=await database;
-    return db.transaction((txn)async{
+    final initialRows=await db.query('batch_expenses',where:'id=?',whereArgs:[expenseId],limit:1);
+    if(initialRows.isEmpty)return 0;
+    final batchId=initialRows.first['batch_id'] as int;
+    return _guardedWrite('batch-expense-batch:$batchId', () => db.transaction((txn)async{
       final rows=await txn.query('batch_expenses',where:'id=?',whereArgs:[expenseId],limit:1);
       if(rows.isEmpty)return 0;
-      final batchId=rows.first['batch_id'] as int;
       final sold=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations WHERE batch_id=?',[batchId])).first['kg'] as num;
       if(!batchExpenseFinancialEditAllowed(sold))throw Exception('لا يمكن حذف مصروف الدفعة بعد تسجيل مبيعات عليها؛ حتى لا تتغير الأرباح السابقة.');
       return txn.delete('batch_expenses',where:'id=?',whereArgs:[expenseId]);
-    });
+    }));
   }
   Future<int> addBatchExpense(int batchId,int amount,String note) async {
     if(amount<=0)throw Exception('أدخل مبلغ مصروف صحيح');
     if(note.trim().isEmpty)throw Exception('اكتب بيان المصروف');
     final db=await database;
-    return _guardedWrite('batch-expense:add:$batchId', () => db.transaction((txn)async{
+    return _guardedWrite('batch-expense-batch:$batchId', () => db.transaction((txn)async{
       final batch=await txn.query('private_batches',where:'id=?',whereArgs:[batchId],limit:1);
       if(batch.isEmpty)throw Exception('دفعة الشراء غير موجودة');
       final sold=(await txn.rawQuery('SELECT COALESCE(SUM(kg),0) kg FROM sale_batch_allocations WHERE batch_id=?',[batchId])).first['kg'] as num;
@@ -1360,7 +1365,7 @@ class ReportsPage extends StatelessWidget{
                       pdfText('المخزون الصافي المتبقي: ${number(totals['remainingKg'])} كجم', font),
                       pdfText('قيمة تكلفة المخزون المتبقي: ${number(totals['inventoryCost'])} ر.ي', font),
                       pdfText('إجمالي المصروفات المسجلة: ${number(totals['expenses'])} ر.ي', font),
-                      pdfText('المصروفات القديمة غير المربوطة بدفعة: ${number(totals['expensesAllocated'])} ر.ي (لا تدخل في ربح الدفعات)', font),
+                      pdfText('المصروفات العامة غير الموزعة على الشحنات: ${number(totals['expensesAllocated'])} ر.ي (تُخصم من الربح الإجمالي، ولا تدخل في ربح الشحنة الفردية)', font),
                       if ((totals['unallocatedSoldKg'] ?? 0) > 0.0001)
                         pdfText('تنبيه: وزن مبيعات غير موزع على المخزون: ${number(totals['unallocatedSoldKg']!)} كجم؛ الربح غير محسوب لوجود نقص.', font, fontSize: 11, color: pdf.PdfColor.fromHex('#B3261E')),
                     ],
@@ -1411,7 +1416,7 @@ class ReportsPage extends StatelessWidget{
           'remainingKg':'المخزون الصافي المتبقي',
           'inventoryCost':'تكلفة المخزون المتبقي',
           'expenses':'إجمالي المصروفات',
-          'expensesAllocated':'مصروفات قديمة غير مربوطة بدفعة (خارج الربح)',
+          'expensesAllocated':'مصروفات عامة غير موزعة على الشحنات (تُخصم من الربح الإجمالي)',
           'unallocatedSoldKg':'وزن مبيعات غير موزع (مراجعة المخزون)',
         };
         return ListView(
@@ -1468,7 +1473,7 @@ class _PrivateCostPageState extends State<PrivateCostPage> {
         Text('إجمالي إيرادات المبيعات: ${money(totals['sales']??0)}'),
         Text('تكلفة البضاعة المباعة (شاملة مصروف الدفعات): ${money(totals['costOfSold']??0)}'),
         Text('إجمالي المصروفات المسجلة: ${money(totals['expenses']??0)}'),
-        Text('المصروفات القديمة غير المربوطة بدفعة: ${money(totals['expensesAllocated']??0)} (لا تدخل في الربح)',style:const TextStyle(fontSize:12,color:Colors.orange)),
+        Text('المصروفات العامة غير الموزعة على الشحنات: ${money(totals['expensesAllocated']??0)} (تُخصم من الربح الإجمالي)',style:const TextStyle(fontSize:12,color:Colors.orange)),
         Text('الربح المؤقت: ${money(totals['netProfit']??0)}'),
         const Divider(),
         TextField(controller:actualController,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الوزن الفعلي الذي قمت بوزنه (كجم)',border:OutlineInputBorder()),onChanged:(_)=>setDialog((){})),
