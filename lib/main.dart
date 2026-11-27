@@ -91,6 +91,7 @@ bool batchAllocationOverage(num allocatedKg,num netKg,{double tolerance=0.0001})
   if (!allocatedKg.isFinite || !netKg.isFinite || allocatedKg < 0 || netKg < 0) return true;
   return allocatedKg>netKg+tolerance;
 }
+bool allocationRowValid(num kg) => kg.isFinite && kg > 0;
 
 String money(num value) => '${NumberFormat('#,##0', 'en').format(value)} ر.ي';
 String dateLabel(String value) => DateFormat('yyyy/MM/dd HH:mm').format(DateTime.parse(value));
@@ -352,6 +353,7 @@ class DB {
     var unallocatedKg=unallocatedSaleKg(soldKg,allocatedSalesKg,migratedGap);
     final allocatedBySale=<int,double>{};
     for(final a in saleAllocations) {
+      if(!allocationRowValid(a['kg'] as num)) allocationIntegrityOk=false;
       final sid=a['sale_id'] as int;
       allocatedBySale[sid]=(allocatedBySale[sid]??0.0)+(a['kg'] as num).toDouble();
     }
@@ -497,7 +499,7 @@ class DB {
     }
     final batchIntegrity=allBatchRows.every((b)=>!batchAllocationOverage(batchAllocatedTotals[b['id'] as int]??0,b['net_kg'] as num));
     final allocationRowsAll=await db.query('sale_batch_allocations');
-    final allocationReferencesOk=allocationRowsAll.every((a)=>salesRows.any((sale)=>sale['id']==a['sale_id'])&&allBatchRows.any((b)=>b['id']==a['batch_id']));
+    final allocationReferencesOk=allocationRowsAll.every((a)=>allocationRowValid(a['kg'] as num)&&salesRows.any((sale)=>sale['id']==a['sale_id'])&&allBatchRows.any((b)=>b['id']==a['batch_id']));
     final allocationIntegrityOk=invoiceIntegrity&&batchIntegrity&&allocationReferencesOk;
     final profit=batchNetProfit(revenue,soldKg,unitCost);
     return {'batch':batch,'netKg':netKg,'cost':baseCost,'unitCost':unitCost,'batchExpenses':expenseTotal,'capital':capital,'soldKg':soldKg,'remainingKg':remainingKg,'revenue':revenue,'costOfSold':costOfSold,'expenseShare':expenseTotal*(soldKg/(netKg==0?1:netKg)),'profit':profit,'profitReliable':soldKg<=netKg+0.0001&&unallocatedSalesKg<=0.0001&&allocationIntegrityOk,'profitFinal':remainingKg<=0.0001&&unallocatedSalesKg<=0.0001&&allocationIntegrityOk,'allocationIntegrityOk':allocationIntegrityOk,'expenseTotal':expenseTotal,'unallocatedSoldKg':unallocatedSalesKg,'allocations':allocatedSales,'expenseRows':expenseRows};
