@@ -402,6 +402,44 @@ class DB {
       return saleId;
     }));
   }
+  // Financial-only invoice edits: keep weight/customer/batch allocation immutable.
+  // Pooled customer receipts must remain fully covered after the revised invoice balance.
+  Future<int> updateSaleFinancialDetails(int saleId, int price, int paid, String note) async {
+    if (price <= 0 || paid < 0) throw Exception('تحقق من السعر والمدفوع');
+    final db = await database;
+    return _guardedWrite('sale-edit:$saleId', () => db.transaction((txn) async {
+      final rows = await txn.query('sales', where:'id=?', whereArgs:[saleId], limit:1);
+      if (rows.isEmpty) throw Exception('الفاتورة غير موجودة');
+      final sale=rows.first;
+      final kg=sale['kg'] as num;
+      final customerId=sale['customer_id'] as int?;
+      final kind=sale['kind'] as String;
+      final revisedTotal=(kg*price).round();
+      if (!saleFinancialValuesAllowed(revisedTotal,paid,kind,customerId!=null)) {
+        if (paid > revisedTotal) throw Exception('المدفوع لا يتجاوز إجمالي الفاتورة');
+        if (kind=='نقدي' && paid!=revisedTotal) throw Exception('الفاتورة النقدية يجب أن تكون مدفوعة بالكامل');
+        throw Exception('القيم المالية الجديدة غير صحيحة');
+      }
+      if (customerId!=null) {
+        final customerSales=await txn.query('sales',where:'customer_id=?',whereArgs:[customerId]);
+        final receipts=await txn.query('collections',where:'customer_id=?',whereArgs:[customerId]);
+        final invoiceTotals=customerSales.map((row)=>row['total'] as num).toList();
+        final invoicePaid=customerSales.map((row)=>row['paid'] as num).toList();
+        final receiptAmounts=receipts.map((row)=>row['amount'] as num).toList();
+        if (!customerCollectionLedgerIntegrityAllowed(invoiceTotals,invoicePaid,receiptAmounts)) {
+          throw Exception('كشف حساب العميل غير متوازن؛ لا يمكن تعديل الفاتورة حتى مراجعة التحصيلات.');
+        }
+        final outstanding=customerSales.fold<num>(0,(sum,row)=>sum+(row['total'] as num)-(row['paid'] as num));
+        final oldOutstanding=(sale['total'] as num)-(sale['paid'] as num);
+        final collected=receipts.fold<num>(0,(sum,row)=>sum+(row['amount'] as num));
+        final revisedOutstanding=revisedTotal-paid;
+        if (!customerInvoiceEditCollectionCoverageAllowed(outstanding,oldOutstanding,collected,revisedOutstanding)) {
+          throw Exception('لا يمكن تعديل الفاتورة؛ الرصيد بعد التعديل لن يغطي التحصيلات المسجلة للعميل.');
+        }
+      }
+      return txn.update('sales',{'price':price,'total':revisedTotal,'paid':paid,'note':note.trim()},where:'id=?',whereArgs:[saleId]);
+    }));
+  }
   Future<int> collect(int customerId, int amount, String note) async {
     if (amount <= 0) throw Exception('أدخل مبلغ تحصيل صحيح');
     if (note.trim().isEmpty) throw Exception('اكتب بيان التحصيل لتسهيل المراجعة');
@@ -1170,6 +1208,32 @@ class _ReservationsPageState extends State<ReservationsPage> {
 class InvoicePage extends StatefulWidget{const InvoicePage({super.key});@override State<InvoicePage> createState()=>_InvoicePageState();}
 class _InvoicePageState extends State<InvoicePage>{
   late Future<List<Map<String,Object?>>> future;@override void initState(){super.initState();future=DB.instance.sales();}
+  Future<void> editInvoice(Map<String,Object?> sale) async {
+    final price=TextEditingController(text:(sale['price'] as num).toString());
+    final paid=TextEditingController(text:(sale['paid'] as num).toString());
+    final note=TextEditingController(text:sale['note']?.toString()??'');
+    final result=await showDialog<bool>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,refresh)=>AlertDialog(
+      title:Text('تعديل ${sale['invoice']}'),
+      content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+        Text('الوزن ثابت: ${(sale['kg'] as num).toStringAsFixed(3)} كجم • ${sale['kind']}'),
+        TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو الجديد')),
+        TextField(controller:paid,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'المدفوع الجديد')),
+        TextField(controller:note,maxLines:3,decoration:const InputDecoration(labelText:'ملاحظات')),
+        const SizedBox(height:6),
+        Text('الإجمالي الجديد: ${money(((sale['kg'] as num)*(int.tryParse(price.text)??0)).round())}',style:const TextStyle(fontWeight:FontWeight.bold,color:gold)),
+        const Text('التعديل المالي فقط؛ الوزن والعميل ودفعة المخزون تبقى كما هي.',style:TextStyle(fontSize:12)),
+      ])),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حفظ التعديل'))]
+    )));
+    if(result==true){
+      try{
+        final newPrice=int.parse(price.text.trim()),newPaid=int.parse(paid.text.trim());
+        await DB.instance.updateSaleFinancialDetails(sale['id'] as int,newPrice,newPaid,note.text);
+        if(mounted){showMessage(context,'تم تحديث الفاتورة بأمان');setState(()=>future=DB.instance.sales());}
+      }catch(e){if(mounted)showMessage(context,e.toString().replaceFirst('Exception: ',''));}
+    }
+    price.dispose();paid.dispose();note.dispose();
+  }
   void openInvoice(Map<String,Object?> sale)=>Navigator.push(context,MaterialPageRoute(builder:(_)=>InvoicePreview(sale:sale)));
   @override Widget build(BuildContext context)=>FutureBuilder<List<Map<String,Object?>>>(
     future:future,builder:(context,s)=>ListView(padding:const EdgeInsets.all(12),children:[
@@ -1182,6 +1246,7 @@ class _InvoicePageState extends State<InvoicePage>{
         leading:const Icon(Icons.receipt,color:gold),
         trailing:Wrap(children:[
           IconButton(tooltip:'عرض الفاتورة',icon:const Icon(Icons.visibility,color:gold),onPressed:()=>openInvoice(v)),
+          IconButton(tooltip:'تعديل الفاتورة',icon:const Icon(Icons.edit_outlined),onPressed:()=>editInvoice(v)),
           IconButton(icon:const Icon(Icons.delete,color:Colors.red),onPressed:()async{
           final confirmed=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
             title:const Text('تأكيد حذف الفاتورة'),
