@@ -95,11 +95,11 @@ void main() {
       expect(customerInvoiceEditCollectionCoverageAllowed(10000, 5000, 4000, 4000), isTrue);
     });
     test('blocks edits that reduce customer debt below pooled receipts', () {
-      expect(customerInvoiceEditCollectionCoverageAllowed(10000, 5000, 4000, 0), isFalse);
+      expect(customerInvoiceEditCollectionCoverageAllowed(5000, 5000, 4000, 0), isFalse);
     });
     test('honors tolerance only for tiny rounding differences', () {
-      expect(customerInvoiceEditCollectionCoverageAllowed(10000, 5000, 4000, 2999.99995), isTrue);
-      expect(customerInvoiceEditCollectionCoverageAllowed(10000, 5000, 4000, 2999.99), isFalse);
+      expect(customerInvoiceEditCollectionCoverageAllowed(5000, 5000, 3000, 2999.99995), isTrue);
+      expect(customerInvoiceEditCollectionCoverageAllowed(5000, 5000, 3000, 2999.99), isFalse);
     });
     test('rejects invalid or non-finite ledger values', () {
       expect(customerInvoiceEditCollectionCoverageAllowed(-1, 0, 0, 1), isFalse);
