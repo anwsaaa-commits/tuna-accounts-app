@@ -141,6 +141,15 @@ void main() {
       expect(batchAllocationOverage(5, double.infinity), isTrue);
     });
 
+    test('general expense records must be positive finite values before profit is trusted', () {
+      expect(generalExpenseRowsValid([]),isTrue);
+      expect(generalExpenseRowsValid([100,2500]),isTrue);
+      expect(generalExpenseRowsValid([0]),isFalse);
+      expect(generalExpenseRowsValid([-1]),isFalse);
+      expect(generalExpenseRowsValid([double.nan]),isFalse);
+      expect(generalExpenseRowsValid([double.infinity]),isFalse);
+    });
+
     test('global net profit deducts general expenses separately from batch cost', () {
       // Batch cost already includes batch expenses; only general expenses are deducted here.
       expect(globalNetProfit(200000, 120000, 15000), 65000);
