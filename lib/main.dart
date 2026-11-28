@@ -1216,7 +1216,7 @@ class _InvoicePageState extends State<InvoicePage>{
       title:Text('تعديل ${sale['invoice']}'),
       content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
         Text('الوزن ثابت: ${(sale['kg'] as num).toStringAsFixed(3)} كجم • ${sale['kind']}'),
-        TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو الجديد')),
+        TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'سعر الكيلو الجديد'),onChanged:(_)=>refresh((){})),
         TextField(controller:paid,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'المدفوع الجديد')),
         TextField(controller:note,maxLines:3,decoration:const InputDecoration(labelText:'ملاحظات')),
         const SizedBox(height:6),
