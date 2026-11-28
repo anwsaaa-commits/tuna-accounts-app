@@ -149,6 +149,12 @@ void main() {
     test('global profit cannot be final with no purchase batches', () {
       expect(globalProfitFinalAllowed(0, 0, 0, true), isFalse);
     });
+    test('global profit finality must also require valid batch financial records', () {
+      // Inventory can reconcile perfectly while purchase cost data is corrupt.
+      expect(globalProfitFinalAllowed(2, 0, 0, false), isFalse);
+      expect(globalProfitFinalAllowed(2, 0, 0, true), isTrue);
+    });
+
     test('global profit is final only when all inventory and allocations reconcile', () {
       expect(globalProfitFinalAllowed(2, 0, 0, true), isTrue);
       expect(globalProfitFinalAllowed(2, 0.5, 0, true), isFalse);
