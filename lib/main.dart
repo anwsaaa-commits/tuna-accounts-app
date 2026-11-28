@@ -522,7 +522,7 @@ class DB {
     // they are shown in the total expenses but not distributed silently.
     final netProfit=globalNetProfit(salesTotals['total'] as num,costSold,legacyExpenses);
     final profitDataReliable=unallocatedKg<=0.0001&&allocationIntegrityOk&&financialIntegrityOk;
-    final finalProfit=globalProfitFinalAllowed(batches.length,remainingKg,unallocatedKg,allocationIntegrityOk);
+    final finalProfit=globalProfitFinalAllowed(batches.length,remainingKg,unallocatedKg,allocationIntegrityOk&&financialIntegrityOk);
     return {'sales':salesTotals['total'] as num,'paid':salesTotals['paid'] as num,'weight':soldKg,'collections':collections,'debt':due-collections,'purchaseCost':purchaseCost,'costPerKg':netKg>0?purchaseCost/netKg:0.0,'costOfSold':costSold,'inventoryCost':stockCost,'stockNetKg':netKg,'remainingKg':remainingKg,'expenses':expenseTotal,'expensesAllocated':legacyExpenses,'netProfit':profitDataReliable?netProfit:0,'unallocatedSoldKg':unallocatedKg,'profitReliable':profitDataReliable?1:0,'profitFinal':finalProfit&&profitDataReliable?1:0,'allocationIntegrityOk':allocationIntegrityOk?1:0};
   }
   Future<List<Map<String,Object?>>> reservations() async => (await database).query('reservations',orderBy:'created DESC');
