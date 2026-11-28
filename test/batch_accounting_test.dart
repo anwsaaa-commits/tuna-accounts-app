@@ -164,5 +164,25 @@ void main() {
     test('zero net weight never divides by zero', () {
       expect(batchUnitCost(150000, 27000, 0), 0);
     });
+
+    test('odd invoice totals remain conserved across fractional multi-batch splits', () {
+      const invoiceTotal = 12345;
+      const invoiceKg = 7.3;
+      final shares = [1.1, 2.2, 4.0]
+          .map((kg) => allocationRevenueShare(invoiceTotal, invoiceKg, kg))
+          .toList();
+      expect(shares.reduce((a, b) => a + b), closeTo(invoiceTotal, 0.0001));
+    });
+
+    test('batch profit subtracts purchase expense through unit cost for fractional kilograms', () {
+      final costPerKg = batchUnitCost(100000, 12500, 22.5);
+      expect(costPerKg, closeTo(5000, 0.0001));
+      expect(batchNetProfit(18750, 3.25, costPerKg), closeTo(2500, 0.0001));
+    });
+
+    test('partial batch remains non-final even when sold allocations reconcile', () {
+      expect(batchStatementIntegrityAllowed(20, 90000, 5000, 19.5, 97500, 0, true), isTrue);
+      expect(globalProfitFinalAllowed(1, 0.5, 0, true), isFalse);
+    });
   });
 }
