@@ -86,6 +86,8 @@ bool globalProfitFinalAllowed(num batchCount,num remainingKg,num unallocatedKg,b
   return remainingKg <= tolerance && unallocatedKg <= tolerance;
 }
 
+bool generalExpenseRowsValid(List<num> expenses) => expenses.every((amount)=>amount.isFinite&&amount>0);
+
 double globalNetProfit(num salesRevenue,num costOfSold,num generalExpenses) {
   if (!salesRevenue.isFinite || !costOfSold.isFinite || !generalExpenses.isFinite ||
       salesRevenue < 0 || costOfSold < 0 || generalExpenses < 0) return 0;
@@ -471,12 +473,13 @@ class DB {
     final sales=await db.query('sales');
     final saleAllocations=await db.query('sale_batch_allocations');
     final batchExpenses=await db.query('batch_expenses');
-    final legacyExpenses=(await db.rawQuery('SELECT COALESCE(SUM(amount),0) amount FROM expenses')).first['amount'] as num;
+    final legacyExpenseRows=await db.query('expenses');
+    final legacyExpenses=legacyExpenseRows.fold<num>(0,(sum,row)=>sum+(row['amount'] as num));
     final netKg=batches.fold<num>(0,(sum,b)=>sum+(b['net_kg'] as num));
     final purchaseCost=batches.fold<num>(0,(sum,b)=>sum+(b['total_cost'] as num));
     final soldKg=salesTotals['weight'] as num;
     var costSold=0.0,stockCost=0.0,remainingKg=0.0,expenseTotal=legacyExpenses;
-    var financialIntegrityOk=true;
+    var financialIntegrityOk=generalExpenseRowsValid(legacyExpenseRows.map((e)=>e['amount'] as num).toList());
     if(batchExpenses.any((e)=>!batches.any((b)=>b['id']==e['batch_id']))) financialIntegrityOk=false;
     // Reconcile the persisted migration warning against current sales and allocations.
     // Use the larger value to avoid double-counting historical migration gaps.
